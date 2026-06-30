@@ -1,5 +1,6 @@
 import pygame
 import sys
+from datetime import datetime
 
 pygame.init()
 
@@ -228,6 +229,18 @@ def draw_back_button():
     label = font_small.render("< Back", True, TEXT_DIM)
     screen.blit(label, (back_button.x + 20, back_button.y + 12))
 
+def draw_clock():
+    now = datetime.now()  # grabs the current date and time
+    time_string = now.strftime("%I:%M %p")  # formats it like "09:41 PM"
+    
+    # strip a leading zero if present, so "09:41 PM" becomes "9:41 PM"
+    if time_string.startswith("0"):
+        time_string = time_string[1:]
+
+    clock_label = font_small.render(time_string, True, TEXT_DIM)
+    # Position it in the top right corner, with a little padding from the edge
+    screen.blit(clock_label, (SCREEN_WIDTH - clock_label.get_width() - 20, 24))
+
 
 clock = pygame.time.Clock()
 
@@ -291,5 +304,7 @@ while True:
         draw_speakers_screen()
     elif current_screen == "chat":
         draw_chat_screen()
+
+    draw_clock()
 
     pygame.display.flip()
