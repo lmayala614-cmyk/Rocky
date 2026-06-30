@@ -34,7 +34,7 @@ home_buttons = [
     {"rect": pygame.Rect(40, 250, 720, 50), "label": "Talk to Rocky", "goto": "chat"},
 ]
 
-back_button = pygame.Rect(20, 460, 100, 40)
+back_button = pygame.Rect(20, 420, 100, 40)
 
 current_song = {
     "title": "Mr. Brightside",
@@ -46,9 +46,9 @@ current_song = {
 elapsed_seconds = 0.0
 is_playing = True
 
-play_button = pygame.Rect(370, 300, 60, 60)
-prev_button = pygame.Rect(290, 315, 50, 50)
-next_button = pygame.Rect(460, 315, 50, 50)
+play_button = pygame.Rect(370, 290, 60, 60)
+prev_button = pygame.Rect(290, 305, 50, 50)
+next_button = pygame.Rect(460, 305, 50, 50)
 
 # ---- FAKE SPEAKER DATA ----
 # A list of dictionaries - one dictionary per speaker.
@@ -95,7 +95,7 @@ def draw_music_screen():
     screen.blit(title, (20, 20))
     pygame.draw.line(screen, BORDER, (0, 60), (SCREEN_WIDTH, 60), 1)
 
-    art_rect = pygame.Rect(300, 80, 200, 200)
+    art_rect = pygame.Rect(300, 70, 180, 140)
     pygame.draw.rect(screen, SURFACE, art_rect, border_radius=12)
     pygame.draw.rect(screen, BORDER, art_rect, width=1, border_radius=12)
     note_icon = font_large.render("note", True, TEXT_DIM)
@@ -104,10 +104,10 @@ def draw_music_screen():
     screen.blit(note_icon, (icon_x, icon_y))
 
     title_text = font_medium.render(current_song["title"], True, TEXT_WHITE)
-    screen.blit(title_text, (400 - title_text.get_width() // 2, 295))
+    screen.blit(title_text, (400 - title_text.get_width() // 2, 215))
 
     artist_text = font_small.render(current_song["artist"], True, TEXT_DIM)
-    screen.blit(artist_text, (400 - artist_text.get_width() // 2, 320))
+    screen.blit(artist_text, (400 - artist_text.get_width() // 2, 240))
 
     bar_x, bar_y, bar_width, bar_height = 250, 250, 300, 4
     pygame.draw.rect(screen, BORDER, (bar_x, bar_y, bar_width, bar_height), border_radius=2)
@@ -230,7 +230,7 @@ def draw_speakers_screen():
     draw_back_button()
 
 def draw_rocky_says(emoji_text, comment):
-    box_rect = pygame.Rect(40, 380, 720, 70)
+    box_rect = pygame.Rect(40, 350, 720, 60)
     pygame.draw.rect(screen, RAISED, box_rect, border_radius=10)
     pygame.draw.rect(screen, BORDER, box_rect, width=1, border_radius=10)
 
