@@ -64,7 +64,7 @@ speakers = [
 # but we also need a matching list of rects to check clicks against.
 # This list gets filled in every time we draw the speaker screen.
 speaker_card_rects = []
-broadcast_button = pygame.Rect(40, 90, 720, 50)
+broadcast_button = pygame.Rect(40, 75, 720, 45)
 
 
 def format_time(seconds):
@@ -87,7 +87,7 @@ def draw_home():
         text_y = button["rect"].y + (button["rect"].height - label.get_height()) // 2
         screen.blit(label, (button["rect"].x + 20, text_y))
 
-    draw_rocky_says("🪐 👋", "Hello! I am ready to help.")   
+    draw_rocky_says(" [° w °] ", "  Hello! I am ready to help.")   
 
 
 def draw_music_screen():
@@ -140,9 +140,9 @@ def draw_music_screen():
                               next_button.centery - next_label.get_height() // 2))
 
     if is_playing:
-        draw_rocky_says("🎵 😄", "This song has good energy!")
+        draw_rocky_says("[ . o . ] ", "  This song has good energy!")
     else:
-        draw_rocky_says("⏸️ 🤔", "Paused. Take your time, human.")
+        draw_rocky_says("[ . _ . ] ", "  Paused. Take your time, human.")
     
     draw_back_button()
 
@@ -170,9 +170,9 @@ def draw_speakers_screen():
     speaker_card_rects = []
 
     # --- Draw one card per speaker ---
-    start_y = 160
-    card_height = 60
-    gap = 12
+    start_y = 140
+    card_height = 48
+    gap = 8
 
     for index, speaker in enumerate(speakers):
         card_y = start_y + index * (card_height + gap)
@@ -220,17 +220,20 @@ def draw_speakers_screen():
         pygame.draw.circle(screen, BLACK, (circle_x, toggle_rect.centery), 9)
 
     connected_count = sum(1 for s in speakers if s["connected"] and s["on"])
-    if connected_count == 0:
-        draw_rocky_says("📡 😴", "No speakers active right now.")
-    elif connected_count == 1:
-        draw_rocky_says("📡 🎧", "One speaker playing. Cozy.")
-    else:
-        draw_rocky_says("📡 🔊", f"{connected_count} speakers active. Sound everywhere!")
-    
-    draw_back_button()
+    rocky_box_y = start_y + len(speakers) * (48 + 8) + 10
 
-def draw_rocky_says(emoji_text, comment):
-    box_rect = pygame.Rect(40, 350, 720, 60)
+    if connected_count == 0:
+        draw_rocky_says("[ - . - ]", "   No speakers active right now.", rocky_box_y)
+    elif connected_count == 1:
+        draw_rocky_says("[ o w o ]", "   One speaker playing. Cozy.", rocky_box_y)
+    else:
+        draw_rocky_says("[ ^ o ^ ]", f"    {connected_count}  speakers active. Sound everywhere!", rocky_box_y)
+
+    back_button.y = rocky_box_y + 70
+    draw_back_button(rocky_box_y + 65)
+
+def draw_rocky_says(emoji_text, comment, y_position=350):
+    box_rect = pygame.Rect(40, y_position, 720, 60)
     pygame.draw.rect(screen, RAISED, box_rect, border_radius=10)
     pygame.draw.rect(screen, BORDER, box_rect, width=1, border_radius=10)
 
@@ -251,11 +254,12 @@ def draw_chat_screen():
     draw_back_button()
 
 
-def draw_back_button():
-    pygame.draw.rect(screen, RAISED, back_button, border_radius=8)
-    pygame.draw.rect(screen, BORDER, back_button, width=1, border_radius=8)
+def draw_back_button(y_position=420):
+    btn = pygame.Rect(20, y_position, 100, 40)
+    pygame.draw.rect(screen, RAISED, btn, border_radius=8)
+    pygame.draw.rect(screen, BORDER, btn, width=1, border_radius=8)
     label = font_small.render("< Back", True, TEXT_DIM)
-    screen.blit(label, (back_button.x + 20, back_button.y + 12))
+    screen.blit(label, (btn.x + 20, btn.y + 12))
 
 def draw_clock():
     now = datetime.now()  # grabs the current date and time
