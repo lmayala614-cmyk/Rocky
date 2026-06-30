@@ -1,0 +1,1 @@
+print("Rocky is online.")
