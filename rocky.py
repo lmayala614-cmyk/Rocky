@@ -34,7 +34,7 @@ home_buttons = [
     {"rect": pygame.Rect(40, 250, 720, 50), "label": "Talk to Rocky", "goto": "chat"},
 ]
 
-back_button = pygame.Rect(20, 420, 100, 40)
+back_button = pygame.Rect(20, 460, 100, 40)
 
 current_song = {
     "title": "Mr. Brightside",
@@ -46,9 +46,9 @@ current_song = {
 elapsed_seconds = 0.0
 is_playing = True
 
-play_button = pygame.Rect(370, 350, 60, 60)
-prev_button = pygame.Rect(290, 365, 50, 50)
-next_button = pygame.Rect(460, 365, 50, 50)
+play_button = pygame.Rect(370, 300, 60, 60)
+prev_button = pygame.Rect(290, 315, 50, 50)
+next_button = pygame.Rect(460, 315, 50, 50)
 
 # ---- FAKE SPEAKER DATA ----
 # A list of dictionaries - one dictionary per speaker.
@@ -86,6 +86,8 @@ def draw_home():
         label = font_medium.render(button["label"], True, TEXT_WHITE)
         text_y = button["rect"].y + (button["rect"].height - label.get_height()) // 2
         screen.blit(label, (button["rect"].x + 20, text_y))
+
+    draw_rocky_says("🪐 👋", "Hello! I am ready to help.")   
 
 
 def draw_music_screen():
@@ -137,6 +139,11 @@ def draw_music_screen():
     screen.blit(next_label, (next_button.centerx - next_label.get_width() // 2,
                               next_button.centery - next_label.get_height() // 2))
 
+    if is_playing:
+        draw_rocky_says("🎵 😄", "This song has good energy!")
+    else:
+        draw_rocky_says("⏸️ 🤔", "Paused. Take your time, human.")
+    
     draw_back_button()
 
 
@@ -212,8 +219,29 @@ def draw_speakers_screen():
             circle_x = toggle_rect.left + 12
         pygame.draw.circle(screen, BLACK, (circle_x, toggle_rect.centery), 9)
 
+    connected_count = sum(1 for s in speakers if s["connected"] and s["on"])
+    if connected_count == 0:
+        draw_rocky_says("📡 😴", "No speakers active right now.")
+    elif connected_count == 1:
+        draw_rocky_says("📡 🎧", "One speaker playing. Cozy.")
+    else:
+        draw_rocky_says("📡 🔊", f"{connected_count} speakers active. Sound everywhere!")
+    
     draw_back_button()
 
+def draw_rocky_says(emoji_text, comment):
+    box_rect = pygame.Rect(40, 380, 720, 70)
+    pygame.draw.rect(screen, RAISED, box_rect, border_radius=10)
+    pygame.draw.rect(screen, BORDER, box_rect, width=1, border_radius=10)
+
+    header = font_tiny.render("ROCKY SAYS", True, ACCENT)
+    screen.blit(header, (box_rect.x + 16, box_rect.y + 10))
+
+    emoji_label = font_medium.render(emoji_text, True, TEXT_WHITE)
+    screen.blit(emoji_label, (box_rect.x + 16, box_rect.y + 30))
+
+    comment_label = font_small.render(comment, True, TEXT_DIM)
+    screen.blit(comment_label, (box_rect.x + 90, box_rect.y + 35))
 
 def draw_chat_screen():
     title = font_large.render("TALK TO ROCKY", True, ACCENT)
