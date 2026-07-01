@@ -1,6 +1,7 @@
 import pygame
 import sys
 from datetime import datetime
+import spotify_controller as spotify
 
 pygame.init()
 pygame.mixer.init()
@@ -49,22 +50,11 @@ scroll_dragging = False
 scroll_drag_start_y = 0
 scroll_drag_start_offset = 0
 
-songs = [
-    {
-        "title": "Test Song",
-        "artist": "Your Artist",
-        "album": "Your Album",
-        "duration_seconds": 180,
-        "file": "test.mp3",
-    },
-]
-
 state = {
     "current_song_index": 0,
-    "current_song": songs[0],
     "elapsed_seconds": 0.0,
     "is_playing": False,
-    "volume": 0.6,
+    "volume": 0.8,
     "speaker_scroll": 0,
 }
 
@@ -145,20 +135,21 @@ def draw_music_screen():
     screen.blit(note_icon, (art_rect.centerx - note_icon.get_width() // 2,
                              art_rect.centery - note_icon.get_height() // 2))
 
-    title_text = font_medium.render(state["current_song"]["title"], True, TEXT_WHITE)
+    title_text = font_medium.render(spotify.current_track["title"], True, TEXT_WHITE)
     screen.blit(title_text, (400 - title_text.get_width() // 2, 220))
 
-    artist_text = font_small.render(state["current_song"]["artist"], True, TEXT_DIM)
+    artist_text = font_small.render(spotify.current_track["artist"], True, TEXT_DIM)
     screen.blit(artist_text, (400 - artist_text.get_width() // 2, 248))
 
     bar_x, bar_y, bar_width, bar_height = 250, 268, 300, 4
     pygame.draw.rect(screen, BORDER, (bar_x, bar_y, bar_width, bar_height), border_radius=2)
-    progress = min(state["elapsed_seconds"] / state["current_song"]["duration_seconds"], 1.0)
+    duration = max(spotify.current_track["duration_seconds"], 1)  # avoid divide by zero
+    progress = min(spotify.current_track["elapsed_seconds"] / duration, 1.0)
     pygame.draw.rect(screen, ACCENT, (bar_x, bar_y, int(bar_width * progress), bar_height), border_radius=2)
 
-    elapsed_label = font_tiny.render(format_time(state["elapsed_seconds"]), True, TEXT_DIM)
+    elapsed_label = font_tiny.render(format_time(spotify.current_track["elapsed_seconds"]), True, TEXT_DIM)
     screen.blit(elapsed_label, (bar_x, bar_y + 10))
-    total_label = font_tiny.render(format_time(state["current_song"]["duration_seconds"]), True, TEXT_DIM)
+    total_label = font_tiny.render(format_time(spotify.current_track["duration_seconds"]), True, TEXT_DIM)
     screen.blit(total_label, (bar_x + bar_width - total_label.get_width(), bar_y + 10))
 
     pygame.draw.rect(screen, RAISED, prev_button, border_radius=25)
@@ -199,7 +190,7 @@ def draw_music_screen():
     vol_pct = font_tiny.render(f"VOL  {int(state['volume'] * 100)}%", True, TEXT_DIM)
     screen.blit(vol_pct, (vol_bar_x + vol_bar_width // 2 - vol_pct.get_width() // 2, vol_bar_y + 10))
 
-    if state["is_playing"]:
+    if spotify.current_track["is_playing"]:
         draw_rocky_says("[ ~ ~ ~ ]", "  This song has good energy!", 350)
     else:
         draw_rocky_says("[ . _ . ]", "  Paused. Take your time, human.", 350)
@@ -312,11 +303,6 @@ while True:
                 for button in home_buttons:
                     if button["rect"].collidepoint(mouse_pos):
                         current_screen = button["goto"]
-                        if button["goto"] == "music":
-                            pygame.mixer.music.load(state["current_song"]["file"])
-                            pygame.mixer.music.set_volume(state["volume"])
-                            pygame.mixer.music.play()
-                            state["is_playing"] = True
 
             elif current_screen == "music":
                 if back_button["rect"].collidepoint(mouse_pos):
@@ -326,39 +312,24 @@ while True:
                     current_screen = "home"
 
                 elif play_button.collidepoint(mouse_pos):
-                    if state["is_playing"]:
-                        pygame.mixer.music.pause()
-                        state["is_playing"] = False
+                    if spotify.current_track["is_playing"]:
+                        spotify.pause()
                     else:
-                        if not pygame.mixer.music.get_busy():
-                            pygame.mixer.music.play()
-                        else:
-                            pygame.mixer.music.unpause()
-                        state["is_playing"] = True
+                        spotify.play()
 
                 elif next_button.collidepoint(mouse_pos):
-                    state["current_song_index"] = (state["current_song_index"] + 1) % len(songs)
-                    state["current_song"] = songs[state["current_song_index"]]
-                    state["elapsed_seconds"] = 0
-                    pygame.mixer.music.load(state["current_song"]["file"])
-                    if state["is_playing"]:
-                        pygame.mixer.music.play()
+                    spotify.next_track()
 
                 elif prev_button.collidepoint(mouse_pos):
-                    state["current_song_index"] = (state["current_song_index"] - 1) % len(songs)
-                    state["current_song"] = songs[state["current_song_index"]]
-                    state["elapsed_seconds"] = 0
-                    pygame.mixer.music.load(state["current_song"]["file"])
-                    if state["is_playing"]:
-                        pygame.mixer.music.play()
+                    spotify.prev_track()
 
                 elif vol_down_button.collidepoint(mouse_pos):
                     state["volume"] = max(0.0, state["volume"] - 0.1)
-                    pygame.mixer.music.set_volume(state["volume"])
+                    spotify.set_volume(int(state["volume"] * 100))
 
                 elif vol_up_button.collidepoint(mouse_pos):
                     state["volume"] = min(1.0, state["volume"] + 0.1)
-                    pygame.mixer.music.set_volume(state["volume"])
+                    spotify.set_volume(int(state["volume"] * 100))
 
             elif current_screen == "speakers":
                 if back_button["rect"].collidepoint(mouse_pos):
@@ -392,14 +363,9 @@ while True:
             max_scroll = max(0, total_height - 230)
             state["speaker_scroll"] = max(0, min(max_scroll, state["speaker_scroll"] - event.y * 20))
 
-    if current_screen == "music" and state["is_playing"]:
-        state["elapsed_seconds"] += dt
-        if state["elapsed_seconds"] >= state["current_song"]["duration_seconds"]:
-            state["elapsed_seconds"] = 0
-            state["current_song_index"] = (state["current_song_index"] + 1) % len(songs)
-            state["current_song"] = songs[state["current_song_index"]]
-            pygame.mixer.music.load(state["current_song"]["file"])
-            pygame.mixer.music.play()
+    # Refresh Spotify data every 2 seconds when on music screen
+    if current_screen == "music":
+        spotify.refresh()
 
     screen.fill(BLACK)
 
