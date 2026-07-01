@@ -45,6 +45,10 @@ next_button = pygame.Rect(460, 305, 50, 50)
 vol_down_button = pygame.Rect(160, 305, 50, 50)
 vol_up_button   = pygame.Rect(590, 305, 50, 50)
 
+scroll_dragging = False
+scroll_drag_start_y = 0
+scroll_drag_start_offset = 0
+
 songs = [
     {
         "title": "Test Song",
@@ -60,7 +64,8 @@ state = {
     "current_song": songs[0],
     "elapsed_seconds": 0.0,
     "is_playing": False,
-    "volume": 0.8,
+    "volume": 0.6,
+    "speaker_scroll": 0,
 }
 
 speakers = [
@@ -209,6 +214,7 @@ def draw_speakers_screen():
     screen.blit(title, (20, 20))
     pygame.draw.line(screen, BORDER, (0, 60), (SCREEN_WIDTH, 60), 1)
 
+    # Broadcast bar - fixed, never scrolls
     any_on = any(s["on"] for s in speakers if s["connected"])
     bc_color = ACCENT if any_on else MUTED
     pygame.draw.rect(screen, RAISED, broadcast_button, border_radius=10)
@@ -219,14 +225,24 @@ def draw_speakers_screen():
     bc_count = font_small.render(f"{connected_count} active", True, TEXT_DIM)
     screen.blit(bc_count, (broadcast_button.right - 100, broadcast_button.y + 15))
 
+    # Scrollable card area
     speaker_card_rects = []
     start_y = 140
-    card_height = 48
-    gap = 8
+    card_height = 56
+    gap = 10
+    scroll_area_top = 130
+    scroll_area_bottom = 370  # cards only draw in this zone
 
     for index, speaker in enumerate(speakers):
-        card_y = start_y + index * (card_height + gap)
+        # Apply scroll offset to card position
+        card_y = start_y + index * (card_height + gap) - state["speaker_scroll"]
         card_rect = pygame.Rect(40, card_y, 720, card_height)
+
+        # Skip cards that are outside the visible scroll area
+        if card_y + card_height < scroll_area_top or card_y > scroll_area_bottom:
+            speaker_card_rects.append({"rect": card_rect, "speaker": speaker})
+            continue
+
         speaker_card_rects.append({"rect": card_rect, "speaker": speaker})
 
         border_color = ACCENT if (speaker["connected"] and speaker["on"]) else BORDER
@@ -237,11 +253,11 @@ def draw_speakers_screen():
         pygame.draw.circle(screen, dot_color, (card_rect.x + 25, card_rect.centery), 6)
 
         name_label = font_medium.render(speaker["name"], True, TEXT_WHITE)
-        screen.blit(name_label, (card_rect.x + 45, card_rect.y + 8))
+        screen.blit(name_label, (card_rect.x + 45, card_rect.y + 10))
 
         model_text = speaker["model"] if speaker["connected"] else speaker["model"] + " - not connected"
         model_label = font_small.render(model_text, True, TEXT_DIM)
-        screen.blit(model_label, (card_rect.x + 45, card_rect.y + 28))
+        screen.blit(model_label, (card_rect.x + 45, card_rect.y + 32))
 
         toggle_rect = pygame.Rect(card_rect.right - 70, card_rect.centery - 12, 50, 24)
         toggle_color = ACCENT if speaker["on"] else MUTED
@@ -249,16 +265,18 @@ def draw_speakers_screen():
         circle_x = toggle_rect.right - 12 if speaker["on"] else toggle_rect.left + 12
         pygame.draw.circle(screen, BLACK, (circle_x, toggle_rect.centery), 9)
 
-    rocky_box_y = start_y + len(speakers) * (card_height + gap) + 10
+    # Draw a fade effect at the bottom of scroll area so it looks clean
+    fade_rect = pygame.Rect(0, scroll_area_bottom - 20, SCREEN_WIDTH, 20)
+    fade_surf = pygame.Surface((SCREEN_WIDTH, 20), pygame.SRCALPHA)
+    fade_surf.fill((10, 13, 20, 180))
+    screen.blit(fade_surf, fade_rect)
 
-    if connected_count == 0:
-        draw_rocky_says("[ - . - ]", "  No speakers active right now.", rocky_box_y)
-    elif connected_count == 1:
-        draw_rocky_says("[ o w o ]", "  One speaker playing. Cozy.", rocky_box_y)
-    else:
-        draw_rocky_says("[ ^ o ^ ]", f"  {connected_count} speakers active. Sound everywhere!", rocky_box_y)
+    # Fixed bottom section - always visible
+    draw_rocky_says("[ ^ o ^ ]" if connected_count > 1 else "[ o w o ]",
+                    f"  {connected_count} speakers active. Sound everywhere!" if connected_count > 1
+                    else "  One speaker playing. Cozy.", 380)
 
-    draw_back_button(rocky_box_y + 65)
+    draw_back_button(445)
 
 
 def draw_chat_screen():
@@ -283,6 +301,13 @@ while True:
         if event.type == pygame.MOUSEBUTTONDOWN:
             mouse_pos = event.pos
 
+            # Start scroll drag tracking
+            if current_screen == "speakers":
+                scroll_dragging = True
+                scroll_drag_start_y = event.pos[1]
+                scroll_drag_start_offset = state["speaker_scroll"]
+
+            # Click handling for all screens
             if current_screen == "home":
                 for button in home_buttons:
                     if button["rect"].collidepoint(mouse_pos):
@@ -292,7 +317,6 @@ while True:
                             pygame.mixer.music.set_volume(state["volume"])
                             pygame.mixer.music.play()
                             state["is_playing"] = True
-                            
 
             elif current_screen == "music":
                 if back_button["rect"].collidepoint(mouse_pos):
@@ -334,11 +358,12 @@ while True:
 
                 elif vol_up_button.collidepoint(mouse_pos):
                     state["volume"] = min(1.0, state["volume"] + 0.1)
-                    pygame.mixer.music.set_volume(state["volume"])        
+                    pygame.mixer.music.set_volume(state["volume"])
 
             elif current_screen == "speakers":
                 if back_button["rect"].collidepoint(mouse_pos):
                     current_screen = "home"
+                    state["speaker_scroll"] = 0
                 elif broadcast_button.collidepoint(mouse_pos):
                     any_on = any(s["on"] for s in speakers if s["connected"])
                     for s in speakers:
@@ -352,6 +377,20 @@ while True:
             else:
                 if back_button["rect"].collidepoint(mouse_pos):
                     current_screen = "home"
+
+        if event.type == pygame.MOUSEBUTTONUP:
+            scroll_dragging = False
+
+        if event.type == pygame.MOUSEMOTION and scroll_dragging and current_screen == "speakers":
+            delta = scroll_drag_start_y - event.pos[1]
+            total_height = len(speakers) * (56 + 10)
+            max_scroll = max(0, total_height - 230)
+            state["speaker_scroll"] = max(0, min(max_scroll, scroll_drag_start_offset + delta))
+
+        if event.type == pygame.MOUSEWHEEL and current_screen == "speakers":
+            total_height = len(speakers) * (56 + 10)
+            max_scroll = max(0, total_height - 230)
+            state["speaker_scroll"] = max(0, min(max_scroll, state["speaker_scroll"] - event.y * 20))
 
     if current_screen == "music" and state["is_playing"]:
         state["elapsed_seconds"] += dt
