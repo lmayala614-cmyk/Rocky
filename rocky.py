@@ -42,6 +42,8 @@ broadcast_button = pygame.Rect(40, 75, 720, 45)
 play_button = pygame.Rect(370, 290, 60, 60)
 prev_button = pygame.Rect(290, 305, 50, 50)
 next_button = pygame.Rect(460, 305, 50, 50)
+vol_down_button = pygame.Rect(160, 305, 50, 50)
+vol_up_button   = pygame.Rect(590, 305, 50, 50)
 
 songs = [
     {
@@ -58,12 +60,14 @@ state = {
     "current_song": songs[0],
     "elapsed_seconds": 0.0,
     "is_playing": False,
+    "volume": 0.8,
 }
 
 speakers = [
     {"name": "Living Room", "model": "JBL Charge 5", "connected": True,  "on": True},
     {"name": "Garage",      "model": "JBL Charge 5", "connected": True,  "on": True},
     {"name": "Backyard",    "model": "Acoon Pair",   "connected": True,  "on": False},
+    {"name": "Desktop",     "model": "1 OontZ Angle 3",  "connected": True,  "on": True},
     {"name": "Kitchen",     "model": "Echo Dot",     "connected": False, "on": False},
 ]
 
@@ -167,6 +171,28 @@ def draw_music_screen():
     next_label = font_medium.render(">|", True, TEXT_DIM)
     screen.blit(next_label, (next_button.centerx - next_label.get_width() // 2,
                               next_button.centery - next_label.get_height() // 2))
+    
+    # Volume down button
+    pygame.draw.rect(screen, RAISED, vol_down_button, border_radius=25)
+    vd_label = font_medium.render("v-", True, TEXT_DIM)
+    screen.blit(vd_label, (vol_down_button.centerx - vd_label.get_width() // 2,
+                            vol_down_button.centery - vd_label.get_height() // 2))
+
+    # Volume up button
+    pygame.draw.rect(screen, RAISED, vol_up_button, border_radius=25)
+    vu_label = font_medium.render("v+", True, TEXT_DIM)
+    screen.blit(vu_label, (vol_up_button.centerx - vu_label.get_width() // 2,
+                            vol_up_button.centery - vu_label.get_height() // 2))
+
+    # Volume bar
+    vol_bar_x, vol_bar_y, vol_bar_width, vol_bar_height = 150, 365, 500, 4
+    pygame.draw.rect(screen, BORDER, (vol_bar_x, vol_bar_y, vol_bar_width, vol_bar_height), border_radius=2)
+    filled = int(vol_bar_width * state["volume"])
+    pygame.draw.rect(screen, ACCENT, (vol_bar_x, vol_bar_y, filled, vol_bar_height), border_radius=2)
+
+    # Volume percentage label
+    vol_pct = font_tiny.render(f"VOL  {int(state['volume'] * 100)}%", True, TEXT_DIM)
+    screen.blit(vol_pct, (vol_bar_x + vol_bar_width // 2 - vol_pct.get_width() // 2, vol_bar_y + 10))
 
     if state["is_playing"]:
         draw_rocky_says("[ ~ ~ ~ ]", "  This song has good energy!", 350)
@@ -263,8 +289,10 @@ while True:
                         current_screen = button["goto"]
                         if button["goto"] == "music":
                             pygame.mixer.music.load(state["current_song"]["file"])
+                            pygame.mixer.music.set_volume(state["volume"])
                             pygame.mixer.music.play()
                             state["is_playing"] = True
+                            
 
             elif current_screen == "music":
                 if back_button["rect"].collidepoint(mouse_pos):
@@ -299,6 +327,14 @@ while True:
                     pygame.mixer.music.load(state["current_song"]["file"])
                     if state["is_playing"]:
                         pygame.mixer.music.play()
+
+                elif vol_down_button.collidepoint(mouse_pos):
+                    state["volume"] = max(0.0, state["volume"] - 0.1)
+                    pygame.mixer.music.set_volume(state["volume"])
+
+                elif vol_up_button.collidepoint(mouse_pos):
+                    state["volume"] = min(1.0, state["volume"] + 0.1)
+                    pygame.mixer.music.set_volume(state["volume"])        
 
             elif current_screen == "speakers":
                 if back_button["rect"].collidepoint(mouse_pos):
