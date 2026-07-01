@@ -3,6 +3,7 @@ import sys
 from datetime import datetime
 
 pygame.init()
+pygame.mixer.init()
 
 SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 480
@@ -34,43 +35,75 @@ home_buttons = [
     {"rect": pygame.Rect(40, 250, 720, 50), "label": "Talk to Rocky", "goto": "chat"},
 ]
 
-back_button = pygame.Rect(20, 420, 100, 40)
+back_button = {"rect": pygame.Rect(20, 420, 100, 40)}
 
-current_song = {
-    "title": "Mr. Brightside",
-    "artist": "The Killers",
-    "album": "Hot Fuss",
-    "duration_seconds": 222,
-}
-
-elapsed_seconds = 0.0
-is_playing = True
+broadcast_button = pygame.Rect(40, 75, 720, 45)
 
 play_button = pygame.Rect(370, 290, 60, 60)
 prev_button = pygame.Rect(290, 305, 50, 50)
 next_button = pygame.Rect(460, 305, 50, 50)
 
-# ---- FAKE SPEAKER DATA ----
-# A list of dictionaries - one dictionary per speaker.
-# "connected" means Rocky can actually reach it. "on" means it's playing right now.
-speakers = [
-    {"name": "Living Room", "model": "JBL Charge 5",  "connected": True,  "on": True},
-    {"name": "Garage",      "model": "JBL Charge 5",  "connected": True,  "on": True},
-    {"name": "Backyard",    "model": "Acoon Pair",    "connected": True,  "on": False},
-    {"name": "Kitchen",     "model": "Echo Dot",      "connected": False, "on": False},
+songs = [
+    {
+        "title": "Test Song",
+        "artist": "Your Artist",
+        "album": "Your Album",
+        "duration_seconds": 180,
+        "file": "test.mp3",
+    },
 ]
 
-# We'll calculate each speaker card's rectangle on the fly when drawing,
-# but we also need a matching list of rects to check clicks against.
-# This list gets filled in every time we draw the speaker screen.
+state = {
+    "current_song_index": 0,
+    "current_song": songs[0],
+    "elapsed_seconds": 0.0,
+    "is_playing": False,
+}
+
+speakers = [
+    {"name": "Living Room", "model": "JBL Charge 5", "connected": True,  "on": True},
+    {"name": "Garage",      "model": "JBL Charge 5", "connected": True,  "on": True},
+    {"name": "Backyard",    "model": "Acoon Pair",   "connected": True,  "on": False},
+    {"name": "Kitchen",     "model": "Echo Dot",     "connected": False, "on": False},
+]
+
 speaker_card_rects = []
-broadcast_button = pygame.Rect(40, 75, 720, 45)
 
 
 def format_time(seconds):
     minutes = int(seconds) // 60
     secs = int(seconds) % 60
     return f"{minutes}:{secs:02d}"
+
+
+def draw_back_button(y_position=420):
+    btn = pygame.Rect(20, y_position, 100, 40)
+    back_button["rect"] = btn
+    pygame.draw.rect(screen, RAISED, btn, border_radius=8)
+    pygame.draw.rect(screen, BORDER, btn, width=1, border_radius=8)
+    label = font_small.render("< Back", True, TEXT_DIM)
+    screen.blit(label, (btn.x + 20, btn.y + 12))
+
+
+def draw_clock():
+    now = datetime.now()
+    time_string = now.strftime("%I:%M %p")
+    if time_string.startswith("0"):
+        time_string = time_string[1:]
+    clock_label = font_small.render(time_string, True, TEXT_DIM)
+    screen.blit(clock_label, (SCREEN_WIDTH - clock_label.get_width() - 20, 24))
+
+
+def draw_rocky_says(emoji_text, comment, y_position=350):
+    box_rect = pygame.Rect(40, y_position, 720, 60)
+    pygame.draw.rect(screen, RAISED, box_rect, border_radius=10)
+    pygame.draw.rect(screen, BORDER, box_rect, width=1, border_radius=10)
+    header = font_tiny.render("ROCKY SAYS", True, ACCENT)
+    screen.blit(header, (box_rect.x + 16, box_rect.y + 10))
+    emoji_label = font_medium.render(emoji_text, True, TEXT_WHITE)
+    screen.blit(emoji_label, (box_rect.x + 16, box_rect.y + 28))
+    comment_label = font_small.render(comment, True, TEXT_DIM)
+    screen.blit(comment_label, (box_rect.x + 140, box_rect.y + 33))
 
 
 def draw_home():
@@ -87,7 +120,8 @@ def draw_home():
         text_y = button["rect"].y + (button["rect"].height - label.get_height()) // 2
         screen.blit(label, (button["rect"].x + 20, text_y))
 
-    draw_rocky_says(" [° w °] ", "  Hello! I am ready to help.")   
+    draw_rocky_says("[ * w * ]", "  Hello! I am ready to help.", 350)
+    draw_back_button(420)
 
 
 def draw_music_screen():
@@ -99,28 +133,23 @@ def draw_music_screen():
     pygame.draw.rect(screen, SURFACE, art_rect, border_radius=12)
     pygame.draw.rect(screen, BORDER, art_rect, width=1, border_radius=12)
     note_icon = font_large.render("note", True, TEXT_DIM)
-    icon_x = art_rect.centerx - note_icon.get_width() // 2
-    icon_y = art_rect.centery - note_icon.get_height() // 2
-    screen.blit(note_icon, (icon_x, icon_y))
+    screen.blit(note_icon, (art_rect.centerx - note_icon.get_width() // 2,
+                             art_rect.centery - note_icon.get_height() // 2))
 
-    title_text = font_medium.render(current_song["title"], True, TEXT_WHITE)
-    screen.blit(title_text, (400 - title_text.get_width() // 2, 215))
+    title_text = font_medium.render(state["current_song"]["title"], True, TEXT_WHITE)
+    screen.blit(title_text, (400 - title_text.get_width() // 2, 220))
 
-    artist_text = font_small.render(current_song["artist"], True, TEXT_DIM)
-    screen.blit(artist_text, (400 - artist_text.get_width() // 2, 240))
+    artist_text = font_small.render(state["current_song"]["artist"], True, TEXT_DIM)
+    screen.blit(artist_text, (400 - artist_text.get_width() // 2, 248))
 
-    bar_x, bar_y, bar_width, bar_height = 250, 250, 300, 4
+    bar_x, bar_y, bar_width, bar_height = 250, 268, 300, 4
     pygame.draw.rect(screen, BORDER, (bar_x, bar_y, bar_width, bar_height), border_radius=2)
+    progress = min(state["elapsed_seconds"] / state["current_song"]["duration_seconds"], 1.0)
+    pygame.draw.rect(screen, ACCENT, (bar_x, bar_y, int(bar_width * progress), bar_height), border_radius=2)
 
-    progress = elapsed_seconds / current_song["duration_seconds"]
-    progress = min(progress, 1.0)
-    filled_width = int(bar_width * progress)
-    pygame.draw.rect(screen, ACCENT, (bar_x, bar_y, filled_width, bar_height), border_radius=2)
-
-    elapsed_label = font_tiny.render(format_time(elapsed_seconds), True, TEXT_DIM)
+    elapsed_label = font_tiny.render(format_time(state["elapsed_seconds"]), True, TEXT_DIM)
     screen.blit(elapsed_label, (bar_x, bar_y + 10))
-
-    total_label = font_tiny.render(format_time(current_song["duration_seconds"]), True, TEXT_DIM)
+    total_label = font_tiny.render(format_time(state["current_song"]["duration_seconds"]), True, TEXT_DIM)
     screen.blit(total_label, (bar_x + bar_width - total_label.get_width(), bar_y + 10))
 
     pygame.draw.rect(screen, RAISED, prev_button, border_radius=25)
@@ -129,7 +158,7 @@ def draw_music_screen():
                               prev_button.centery - prev_label.get_height() // 2))
 
     pygame.draw.circle(screen, ACCENT, play_button.center, 30)
-    play_symbol = "||" if is_playing else ">"
+    play_symbol = "||" if state["is_playing"] else ">"
     play_label = font_medium.render(play_symbol, True, BLACK)
     screen.blit(play_label, (play_button.centerx - play_label.get_width() // 2,
                               play_button.centery - play_label.get_height() // 2))
@@ -139,12 +168,12 @@ def draw_music_screen():
     screen.blit(next_label, (next_button.centerx - next_label.get_width() // 2,
                               next_button.centery - next_label.get_height() // 2))
 
-    if is_playing:
-        draw_rocky_says("[ . o . ] ", "  This song has good energy!")
+    if state["is_playing"]:
+        draw_rocky_says("[ ~ ~ ~ ]", "  This song has good energy!", 350)
     else:
-        draw_rocky_says("[ . _ . ] ", "  Paused. Take your time, human.")
-    
-    draw_back_button()
+        draw_rocky_says("[ . _ . ]", "  Paused. Take your time, human.", 350)
+
+    draw_back_button(425)
 
 
 def draw_speakers_screen():
@@ -154,22 +183,17 @@ def draw_speakers_screen():
     screen.blit(title, (20, 20))
     pygame.draw.line(screen, BORDER, (0, 60), (SCREEN_WIDTH, 60), 1)
 
-    # --- Broadcast to all bar ---
     any_on = any(s["on"] for s in speakers if s["connected"])
     bc_color = ACCENT if any_on else MUTED
     pygame.draw.rect(screen, RAISED, broadcast_button, border_radius=10)
     pygame.draw.rect(screen, bc_color, broadcast_button, width=1, border_radius=10)
     bc_label = font_medium.render("Broadcast to All", True, TEXT_WHITE)
-    screen.blit(bc_label, (broadcast_button.x + 20, broadcast_button.y + 14))
-
+    screen.blit(bc_label, (broadcast_button.x + 20, broadcast_button.y + 12))
     connected_count = sum(1 for s in speakers if s["connected"] and s["on"])
     bc_count = font_small.render(f"{connected_count} active", True, TEXT_DIM)
-    screen.blit(bc_count, (broadcast_button.right - 100, broadcast_button.y + 17))
+    screen.blit(bc_count, (broadcast_button.right - 100, broadcast_button.y + 15))
 
-    # --- Reset the list of clickable rects since we're rebuilding it this frame ---
     speaker_card_rects = []
-
-    # --- Draw one card per speaker ---
     start_y = 140
     card_height = 48
     gap = 8
@@ -177,101 +201,47 @@ def draw_speakers_screen():
     for index, speaker in enumerate(speakers):
         card_y = start_y + index * (card_height + gap)
         card_rect = pygame.Rect(40, card_y, 720, card_height)
-
-        # Remember this rect along with which speaker it belongs to, for click detection later
         speaker_card_rects.append({"rect": card_rect, "speaker": speaker})
 
-        # Card background changes based on state
-        if not speaker["connected"]:
-            border_color = BORDER
-        elif speaker["on"]:
-            border_color = ACCENT
-        else:
-            border_color = BORDER
-
+        border_color = ACCENT if (speaker["connected"] and speaker["on"]) else BORDER
         pygame.draw.rect(screen, SURFACE, card_rect, border_radius=10)
         pygame.draw.rect(screen, border_color, card_rect, width=1, border_radius=10)
 
-        # Status dot on the left
         dot_color = ACCENT if (speaker["connected"] and speaker["on"]) else MUTED
         pygame.draw.circle(screen, dot_color, (card_rect.x + 25, card_rect.centery), 6)
 
-        # Name and model text
         name_label = font_medium.render(speaker["name"], True, TEXT_WHITE)
-        screen.blit(name_label, (card_rect.x + 45, card_rect.y + 10))
+        screen.blit(name_label, (card_rect.x + 45, card_rect.y + 8))
 
-        if speaker["connected"]:
-            model_text = speaker["model"]
-        else:
-            model_text = speaker["model"] + " - not connected"
+        model_text = speaker["model"] if speaker["connected"] else speaker["model"] + " - not connected"
         model_label = font_small.render(model_text, True, TEXT_DIM)
-        screen.blit(model_label, (card_rect.x + 45, card_rect.y + 33))
+        screen.blit(model_label, (card_rect.x + 45, card_rect.y + 28))
 
-        # Toggle switch on the right
         toggle_rect = pygame.Rect(card_rect.right - 70, card_rect.centery - 12, 50, 24)
         toggle_color = ACCENT if speaker["on"] else MUTED
         pygame.draw.rect(screen, toggle_color, toggle_rect, border_radius=12)
-
-        # The little circle inside the toggle - moves right when on, left when off
-        if speaker["on"]:
-            circle_x = toggle_rect.right - 12
-        else:
-            circle_x = toggle_rect.left + 12
+        circle_x = toggle_rect.right - 12 if speaker["on"] else toggle_rect.left + 12
         pygame.draw.circle(screen, BLACK, (circle_x, toggle_rect.centery), 9)
 
-    connected_count = sum(1 for s in speakers if s["connected"] and s["on"])
-    rocky_box_y = start_y + len(speakers) * (48 + 8) + 10
+    rocky_box_y = start_y + len(speakers) * (card_height + gap) + 10
 
     if connected_count == 0:
-        draw_rocky_says("[ - . - ]", "   No speakers active right now.", rocky_box_y)
+        draw_rocky_says("[ - . - ]", "  No speakers active right now.", rocky_box_y)
     elif connected_count == 1:
-        draw_rocky_says("[ o w o ]", "   One speaker playing. Cozy.", rocky_box_y)
+        draw_rocky_says("[ o w o ]", "  One speaker playing. Cozy.", rocky_box_y)
     else:
-        draw_rocky_says("[ ^ o ^ ]", f"    {connected_count}  speakers active. Sound everywhere!", rocky_box_y)
+        draw_rocky_says("[ ^ o ^ ]", f"  {connected_count} speakers active. Sound everywhere!", rocky_box_y)
 
-    back_button.y = rocky_box_y + 70
     draw_back_button(rocky_box_y + 65)
 
-def draw_rocky_says(emoji_text, comment, y_position=350):
-    box_rect = pygame.Rect(40, y_position, 720, 60)
-    pygame.draw.rect(screen, RAISED, box_rect, border_radius=10)
-    pygame.draw.rect(screen, BORDER, box_rect, width=1, border_radius=10)
-
-    header = font_tiny.render("ROCKY SAYS", True, ACCENT)
-    screen.blit(header, (box_rect.x + 16, box_rect.y + 10))
-
-    emoji_label = font_medium.render(emoji_text, True, TEXT_WHITE)
-    screen.blit(emoji_label, (box_rect.x + 16, box_rect.y + 30))
-
-    comment_label = font_small.render(comment, True, TEXT_DIM)
-    screen.blit(comment_label, (box_rect.x + 90, box_rect.y + 35))
 
 def draw_chat_screen():
     title = font_large.render("TALK TO ROCKY", True, ACCENT)
     screen.blit(title, (20, 20))
     msg = font_medium.render("Rocky isn't listening yet.", True, TEXT_DIM)
     screen.blit(msg, (40, 120))
-    draw_back_button()
-
-
-def draw_back_button(y_position=420):
-    btn = pygame.Rect(20, y_position, 100, 40)
-    pygame.draw.rect(screen, RAISED, btn, border_radius=8)
-    pygame.draw.rect(screen, BORDER, btn, width=1, border_radius=8)
-    label = font_small.render("< Back", True, TEXT_DIM)
-    screen.blit(label, (btn.x + 20, btn.y + 12))
-
-def draw_clock():
-    now = datetime.now()  # grabs the current date and time
-    time_string = now.strftime("%I:%M %p")  # formats it like "09:41 PM"
-    
-    # strip a leading zero if present, so "09:41 PM" becomes "9:41 PM"
-    if time_string.startswith("0"):
-        time_string = time_string[1:]
-
-    clock_label = font_small.render(time_string, True, TEXT_DIM)
-    # Position it in the top right corner, with a little padding from the edge
-    screen.blit(clock_label, (SCREEN_WIDTH - clock_label.get_width() - 20, 24))
+    draw_rocky_says("[ ? . ? ]", "  Say something! (coming soon)", 300)
+    draw_back_button(380)
 
 
 clock = pygame.time.Clock()
@@ -291,40 +261,70 @@ while True:
                 for button in home_buttons:
                     if button["rect"].collidepoint(mouse_pos):
                         current_screen = button["goto"]
+                        if button["goto"] == "music":
+                            pygame.mixer.music.load(state["current_song"]["file"])
+                            pygame.mixer.music.play()
+                            state["is_playing"] = True
 
             elif current_screen == "music":
-                if back_button.collidepoint(mouse_pos):
+                if back_button["rect"].collidepoint(mouse_pos):
+                    pygame.mixer.music.stop()
+                    state["is_playing"] = False
+                    state["elapsed_seconds"] = 0
                     current_screen = "home"
+
                 elif play_button.collidepoint(mouse_pos):
-                    is_playing = not is_playing
+                    if state["is_playing"]:
+                        pygame.mixer.music.pause()
+                        state["is_playing"] = False
+                    else:
+                        if not pygame.mixer.music.get_busy():
+                            pygame.mixer.music.play()
+                        else:
+                            pygame.mixer.music.unpause()
+                        state["is_playing"] = True
+
                 elif next_button.collidepoint(mouse_pos):
-                    elapsed_seconds = 0
+                    state["current_song_index"] = (state["current_song_index"] + 1) % len(songs)
+                    state["current_song"] = songs[state["current_song_index"]]
+                    state["elapsed_seconds"] = 0
+                    pygame.mixer.music.load(state["current_song"]["file"])
+                    if state["is_playing"]:
+                        pygame.mixer.music.play()
+
                 elif prev_button.collidepoint(mouse_pos):
-                    elapsed_seconds = 0
+                    state["current_song_index"] = (state["current_song_index"] - 1) % len(songs)
+                    state["current_song"] = songs[state["current_song_index"]]
+                    state["elapsed_seconds"] = 0
+                    pygame.mixer.music.load(state["current_song"]["file"])
+                    if state["is_playing"]:
+                        pygame.mixer.music.play()
 
             elif current_screen == "speakers":
-                if back_button.collidepoint(mouse_pos):
+                if back_button["rect"].collidepoint(mouse_pos):
                     current_screen = "home"
                 elif broadcast_button.collidepoint(mouse_pos):
-                    # If any connected speaker is on, turn all off. Otherwise turn all on.
                     any_on = any(s["on"] for s in speakers if s["connected"])
                     for s in speakers:
                         if s["connected"]:
                             s["on"] = not any_on
                 else:
-                    # Check if a click landed on any individual speaker card
                     for entry in speaker_card_rects:
                         if entry["rect"].collidepoint(mouse_pos) and entry["speaker"]["connected"]:
                             entry["speaker"]["on"] = not entry["speaker"]["on"]
 
             else:
-                if back_button.collidepoint(mouse_pos):
+                if back_button["rect"].collidepoint(mouse_pos):
                     current_screen = "home"
 
-    if current_screen == "music" and is_playing:
-        elapsed_seconds += dt
-        if elapsed_seconds >= current_song["duration_seconds"]:
-            elapsed_seconds = 0
+    if current_screen == "music" and state["is_playing"]:
+        state["elapsed_seconds"] += dt
+        if state["elapsed_seconds"] >= state["current_song"]["duration_seconds"]:
+            state["elapsed_seconds"] = 0
+            state["current_song_index"] = (state["current_song_index"] + 1) % len(songs)
+            state["current_song"] = songs[state["current_song_index"]]
+            pygame.mixer.music.load(state["current_song"]["file"])
+            pygame.mixer.music.play()
 
     screen.fill(BLACK)
 
@@ -338,5 +338,4 @@ while True:
         draw_chat_screen()
 
     draw_clock()
-
     pygame.display.flip()
