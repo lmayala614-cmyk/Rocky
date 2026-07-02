@@ -105,6 +105,30 @@ def draw_rocky_says(emoji_text, comment, y_position=350):
     screen.blit(comment_label, (box_rect.x + 140, box_rect.y + 33))
 
 
+def draw_bottom_bar(face, comment):
+    """Shared bottom bar for every screen - back button left, Rocky says right."""
+    bottom_y = 425
+
+    # Back button - always bottom left
+    btn = pygame.Rect(20, bottom_y, 130, 40)
+    back_button["rect"] = btn
+    pygame.draw.rect(screen, RAISED, btn, border_radius=8)
+    pygame.draw.rect(screen, BORDER, btn, width=1, border_radius=8)
+    back_label = font_small.render("< Back", True, TEXT_DIM)
+    screen.blit(back_label, (btn.x + 20, btn.y + 12))
+
+    # Rocky says - always to the right
+    rocky_rect = pygame.Rect(170, bottom_y, 590, 40)
+    pygame.draw.rect(screen, RAISED, rocky_rect, border_radius=8)
+    pygame.draw.rect(screen, BORDER, rocky_rect, width=1, border_radius=8)
+    header = font_tiny.render("ROCKY SAYS", True, ACCENT)
+    screen.blit(header, (rocky_rect.x + 10, rocky_rect.y + 6))
+    face_label = font_small.render(face, True, TEXT_WHITE)
+    screen.blit(face_label, (rocky_rect.x + 10, rocky_rect.y + 20))
+    comment_label = font_small.render(comment, True, TEXT_DIM)
+    screen.blit(comment_label, (rocky_rect.x + 110, rocky_rect.y + 20))   
+
+
 def draw_home():
     title = font_large.render("ROCKY", True, ACCENT)
     screen.blit(title, (20, 20))
@@ -119,8 +143,7 @@ def draw_home():
         text_y = button["rect"].y + (button["rect"].height - label.get_height()) // 2
         screen.blit(label, (button["rect"].x + 20, text_y))
 
-    draw_rocky_says("[ * w * ]", "  Hello! I am ready to help.", 350)
-    draw_back_button(420)
+    draw_bottom_bar("[ * w * ]", "  Hello! I am ready to help.")
 
 
 def draw_music_screen():
@@ -191,26 +214,10 @@ def draw_music_screen():
     vol_pct = font_tiny.render(f"VOL  {int(state['volume'] * 100)}%", True, TEXT_DIM)
     screen.blit(vol_pct, (vol_bar_x + vol_bar_width // 2 - vol_pct.get_width() // 2, vol_bar_y + 10))
 
-    # Bottom row — back button left, Rocky says right
-    bottom_y = 435
-    draw_back_button(bottom_y)
-
-    rocky_rect = pygame.Rect(170, bottom_y, 590, 40)
-    pygame.draw.rect(screen, RAISED, rocky_rect, border_radius=8)
-    pygame.draw.rect(screen, BORDER, rocky_rect, width=1, border_radius=8)
-    header = font_tiny.render("ROCKY SAYS", True, ACCENT)
-    screen.blit(header, (rocky_rect.x + 10, rocky_rect.y + 6))
-
     if spotify.current_track["is_playing"]:
-        face, comment = "[ ~ ~ ~ ]", "This song has good energy!"
+        draw_bottom_bar("[ ~ ~ ~ ]", "This song has good energy!")
     else:
-        face, comment = "[ . _ . ]", "Paused. Take your time, human."
-
-    face_label = font_small.render(face, True, TEXT_WHITE)
-    screen.blit(face_label, (rocky_rect.x + 10, rocky_rect.y + 20))
-    comment_label = font_small.render(comment, True, TEXT_DIM)
-    screen.blit(comment_label, (rocky_rect.x + 110, rocky_rect.y + 20))
-
+        draw_bottom_bar("[ . _ . ]", "Paused. Take your time, human.")
 
 def draw_speakers_screen():
     global speaker_card_rects
@@ -270,18 +277,13 @@ def draw_speakers_screen():
         circle_x = toggle_rect.right - 12 if speaker["on"] else toggle_rect.left + 12
         pygame.draw.circle(screen, BLACK, (circle_x, toggle_rect.centery), 9)
 
-    # Draw a fade effect at the bottom of scroll area so it looks clean
-    fade_rect = pygame.Rect(0, scroll_area_bottom - 20, SCREEN_WIDTH, 20)
-    fade_surf = pygame.Surface((SCREEN_WIDTH, 20), pygame.SRCALPHA)
-    fade_surf.fill((10, 13, 20, 180))
-    screen.blit(fade_surf, fade_rect)
 
-    # Fixed bottom section - always visible
-    draw_rocky_says("[ ^ o ^ ]" if connected_count > 1 else "[ o w o ]",
-                    f"  {connected_count} speakers active. Sound everywhere!" if connected_count > 1
-                    else "  One speaker playing. Cozy.", 380)
-
-    draw_back_button(445)
+    if connected_count == 0:
+        draw_bottom_bar("[ - . - ]", "No speakers active right now.")
+    elif connected_count == 1:
+        draw_bottom_bar("[ o w o ]", "One speaker playing. Cozy.")
+    else:
+        draw_bottom_bar("[ ^ o ^ ]", f"{connected_count} speakers active. Sound everywhere!")
 
 
 def draw_chat_screen():
@@ -289,8 +291,8 @@ def draw_chat_screen():
     screen.blit(title, (20, 20))
     msg = font_medium.render("Rocky isn't listening yet.", True, TEXT_DIM)
     screen.blit(msg, (40, 120))
-    draw_rocky_says("[ ? . ? ]", "  Say something! (coming soon)", 300)
-    draw_back_button(380)
+    draw_bottom_bar("[ ? . ? ]", "  Say something! (coming soon)")
+
 
 
 clock = pygame.time.Clock()
