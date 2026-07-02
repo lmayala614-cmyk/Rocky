@@ -1,0 +1,8 @@
+pygame
+sounddevice
+soundfile
+numpy
+spotipy
+python-dotenv
+requests
+Pillow

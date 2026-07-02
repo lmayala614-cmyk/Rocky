@@ -36,15 +36,15 @@ home_buttons = [
     {"rect": pygame.Rect(40, 250, 720, 50), "label": "Talk to Rocky", "goto": "chat"},
 ]
 
-back_button = {"rect": pygame.Rect(20, 420, 100, 40)}
+back_button = {"rect": pygame.Rect(20, 420, 120, 40)}
 
 broadcast_button = pygame.Rect(40, 75, 720, 45)
 
-play_button = pygame.Rect(370, 290, 60, 60)
-prev_button = pygame.Rect(290, 305, 50, 50)
-next_button = pygame.Rect(460, 305, 50, 50)
-vol_down_button = pygame.Rect(160, 305, 50, 50)
-vol_up_button   = pygame.Rect(590, 305, 50, 50)
+play_button     = pygame.Rect(375, 330, 55, 55)
+prev_button     = pygame.Rect(295, 343, 50, 50)
+next_button     = pygame.Rect(465, 343, 50, 50)
+vol_down_button = pygame.Rect(170, 343, 50, 50)
+vol_up_button   = pygame.Rect(590, 343, 50, 50)
 
 scroll_dragging = False
 scroll_drag_start_y = 0
@@ -76,7 +76,7 @@ def format_time(seconds):
 
 
 def draw_back_button(y_position=420):
-    btn = pygame.Rect(20, y_position, 100, 40)
+    btn = pygame.Rect(20, y_position, 130, 40)
     back_button["rect"] = btn
     pygame.draw.rect(screen, RAISED, btn, border_radius=8)
     pygame.draw.rect(screen, BORDER, btn, width=1, border_radius=8)
@@ -128,22 +128,28 @@ def draw_music_screen():
     screen.blit(title, (20, 20))
     pygame.draw.line(screen, BORDER, (0, 60), (SCREEN_WIDTH, 60), 1)
 
-    art_rect = pygame.Rect(300, 70, 180, 140)
+    art_rect = pygame.Rect(300, 70, 180, 180)
     pygame.draw.rect(screen, SURFACE, art_rect, border_radius=12)
     pygame.draw.rect(screen, BORDER, art_rect, width=1, border_radius=12)
-    note_icon = font_large.render("note", True, TEXT_DIM)
-    screen.blit(note_icon, (art_rect.centerx - note_icon.get_width() // 2,
-                             art_rect.centery - note_icon.get_height() // 2))
+
+    art_surface = spotify.get_album_art(size=(180, 180))
+    if art_surface:
+        screen.blit(art_surface, (art_rect.x, art_rect.y))
+        pygame.draw.rect(screen, BORDER, art_rect, width=1, border_radius=12)
+    else:
+        note_icon = font_large.render("?", True, TEXT_DIM)
+        screen.blit(note_icon, (art_rect.centerx - note_icon.get_width() // 2,
+                                 art_rect.centery - note_icon.get_height() // 2))
 
     title_text = font_medium.render(spotify.current_track["title"], True, TEXT_WHITE)
-    screen.blit(title_text, (400 - title_text.get_width() // 2, 220))
+    screen.blit(title_text, (400 - title_text.get_width() // 2, 260))
 
     artist_text = font_small.render(spotify.current_track["artist"], True, TEXT_DIM)
-    screen.blit(artist_text, (400 - artist_text.get_width() // 2, 248))
+    screen.blit(artist_text, (400 - artist_text.get_width() // 2, 285))
 
-    bar_x, bar_y, bar_width, bar_height = 250, 268, 300, 4
+    bar_x, bar_y, bar_width, bar_height = 150, 310, 500, 4
     pygame.draw.rect(screen, BORDER, (bar_x, bar_y, bar_width, bar_height), border_radius=2)
-    duration = max(spotify.current_track["duration_seconds"], 1)  # avoid divide by zero
+    duration = max(spotify.current_track["duration_seconds"], 1)
     progress = min(spotify.current_track["elapsed_seconds"] / duration, 1.0)
     pygame.draw.rect(screen, ACCENT, (bar_x, bar_y, int(bar_width * progress), bar_height), border_radius=2)
 
@@ -158,7 +164,7 @@ def draw_music_screen():
                               prev_button.centery - prev_label.get_height() // 2))
 
     pygame.draw.circle(screen, ACCENT, play_button.center, 30)
-    play_symbol = "||" if state["is_playing"] else ">"
+    play_symbol = "||" if spotify.current_track["is_playing"] else ">"
     play_label = font_medium.render(play_symbol, True, BLACK)
     screen.blit(play_label, (play_button.centerx - play_label.get_width() // 2,
                               play_button.centery - play_label.get_height() // 2))
@@ -167,35 +173,43 @@ def draw_music_screen():
     next_label = font_medium.render(">|", True, TEXT_DIM)
     screen.blit(next_label, (next_button.centerx - next_label.get_width() // 2,
                               next_button.centery - next_label.get_height() // 2))
-    
-    # Volume down button
+
     pygame.draw.rect(screen, RAISED, vol_down_button, border_radius=25)
     vd_label = font_medium.render("v-", True, TEXT_DIM)
     screen.blit(vd_label, (vol_down_button.centerx - vd_label.get_width() // 2,
                             vol_down_button.centery - vd_label.get_height() // 2))
 
-    # Volume up button
     pygame.draw.rect(screen, RAISED, vol_up_button, border_radius=25)
     vu_label = font_medium.render("v+", True, TEXT_DIM)
     screen.blit(vu_label, (vol_up_button.centerx - vu_label.get_width() // 2,
                             vol_up_button.centery - vu_label.get_height() // 2))
 
-    # Volume bar
-    vol_bar_x, vol_bar_y, vol_bar_width, vol_bar_height = 150, 365, 500, 4
+    vol_bar_x, vol_bar_y, vol_bar_width, vol_bar_height = 150, 400, 500, 4
     pygame.draw.rect(screen, BORDER, (vol_bar_x, vol_bar_y, vol_bar_width, vol_bar_height), border_radius=2)
     filled = int(vol_bar_width * state["volume"])
     pygame.draw.rect(screen, ACCENT, (vol_bar_x, vol_bar_y, filled, vol_bar_height), border_radius=2)
-
-    # Volume percentage label
     vol_pct = font_tiny.render(f"VOL  {int(state['volume'] * 100)}%", True, TEXT_DIM)
     screen.blit(vol_pct, (vol_bar_x + vol_bar_width // 2 - vol_pct.get_width() // 2, vol_bar_y + 10))
 
-    if spotify.current_track["is_playing"]:
-        draw_rocky_says("[ ~ ~ ~ ]", "  This song has good energy!", 350)
-    else:
-        draw_rocky_says("[ . _ . ]", "  Paused. Take your time, human.", 350)
+    # Bottom row — back button left, Rocky says right
+    bottom_y = 435
+    draw_back_button(bottom_y)
 
-    draw_back_button(425)
+    rocky_rect = pygame.Rect(170, bottom_y, 590, 40)
+    pygame.draw.rect(screen, RAISED, rocky_rect, border_radius=8)
+    pygame.draw.rect(screen, BORDER, rocky_rect, width=1, border_radius=8)
+    header = font_tiny.render("ROCKY SAYS", True, ACCENT)
+    screen.blit(header, (rocky_rect.x + 10, rocky_rect.y + 6))
+
+    if spotify.current_track["is_playing"]:
+        face, comment = "[ ~ ~ ~ ]", "This song has good energy!"
+    else:
+        face, comment = "[ . _ . ]", "Paused. Take your time, human."
+
+    face_label = font_small.render(face, True, TEXT_WHITE)
+    screen.blit(face_label, (rocky_rect.x + 10, rocky_rect.y + 20))
+    comment_label = font_small.render(comment, True, TEXT_DIM)
+    screen.blit(comment_label, (rocky_rect.x + 110, rocky_rect.y + 20))
 
 
 def draw_speakers_screen():

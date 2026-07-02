@@ -3,6 +3,10 @@ from spotipy.oauth2 import SpotifyOAuth
 from dotenv import load_dotenv
 import os
 import time
+import requests
+from PIL import Image
+import io
+import pygame
 
 load_dotenv()
 
@@ -27,6 +31,10 @@ current_track = {
     "album_art_url": None,
     "device": None,
 }
+
+# Cache so we don't re-download the same album art every frame
+_last_art_url = None
+_cached_art_surface = None
 
 last_update_time = 0
 UPDATE_INTERVAL = 2.0
@@ -102,3 +110,44 @@ def set_volume(percent):
         sp.volume(int(percent))
     except Exception as e:
         print(f"Spotify volume failed: {e}")
+
+def get_album_art(size=(180, 180)):
+    """
+    Downloads album art and returns a pygame Surface.
+    Caches it so we only download when the song changes.
+    Returns None if no art is available.
+    """
+    global _last_art_url, _cached_art_surface
+
+    url = current_track["album_art_url"]
+
+    if not url:
+        return None
+
+    # If the URL hasn't changed, return the cached version
+    if url == _last_art_url and _cached_art_surface is not None:
+        return _cached_art_surface
+
+    try:
+        # Download the image bytes from Spotify's CDN
+        response = requests.get(url, timeout=5)
+        response.raise_for_status()
+
+        # Convert bytes → PIL Image → resize → pygame Surface
+        image = Image.open(io.BytesIO(response.content))
+        image = image.resize(size, Image.LANCZOS)
+        image = image.convert("RGB")
+
+        # PIL uses (R,G,B) strings, pygame needs a specific format
+        raw = image.tobytes()
+        surface = pygame.image.fromstring(raw, size, "RGB")
+
+        # Cache it
+        _last_art_url = url
+        _cached_art_surface = surface
+
+        return surface
+
+    except Exception as e:
+        print(f"Album art fetch failed: {e}")
+        return None        
