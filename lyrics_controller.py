@@ -33,7 +33,7 @@ def fetch_lyrics(title, artist, duration_seconds=0):
                 "track_name": clean_title,
                 "artist_name": artist,
             },
-            timeout=8
+            timeout=3
         )
 
         if response.status_code != 200 or not response.json():
