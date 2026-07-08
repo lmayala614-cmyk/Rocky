@@ -35,6 +35,7 @@ home_buttons = [
     {"rect": pygame.Rect(40, 120, 720, 50), "label": "Music Player",  "goto": "music"},
     {"rect": pygame.Rect(40, 185, 720, 50), "label": "Speakers",      "goto": "speakers"},
     {"rect": pygame.Rect(40, 250, 720, 50), "label": "Talk to Rocky", "goto": "chat"},
+    {"rect": pygame.Rect(40, 315, 720, 50), "label": "Playlists",     "goto": "playlists"},
 ]
 
 back_button = {"rect": pygame.Rect(20, 420, 120, 40)}
@@ -45,6 +46,8 @@ next_button     = pygame.Rect(465, 343, 50, 50)
 vol_down_button = pygame.Rect(170, 343, 50, 50)
 vol_up_button   = pygame.Rect(590, 343, 50, 50)
 lyrics_button   = pygame.Rect(580, 68, 100, 28)
+playlist_button = pygame.Rect(40, 310, 720, 50)
+
 
 scroll_dragging = False
 scroll_drag_start_y = 0
@@ -57,6 +60,13 @@ state = {
     "volume": 0.8,
     "speaker_scroll": 0,
     "show_lyrics": False,
+    "playlists": [],
+    "playlist_scroll": 0,
+    "selected_playlist": None,
+    "playlist_tracks": [],
+    "playlists_loaded": False,
+    "track_scroll": 0,
+    "playlist_screen": "playlists",  # "playlists" or "tracks"
 }
 
 speakers = [
@@ -299,6 +309,82 @@ def draw_chat_screen():
     screen.blit(msg, (40, 120))
     draw_bottom_bar("[ ? . ? ]", "Say something! (coming soon)")
 
+def draw_playlists_screen():
+    title = font_large.render("PLAYLISTS", True, ACCENT)
+    screen.blit(title, (20, 20))
+    pygame.draw.line(screen, BORDER, (0, 60), (SCREEN_WIDTH, 60), 1)
+
+    if state["playlist_screen"] == "playlists":
+        # Show list of playlists
+        if not state["playlists"]:
+            loading = font_medium.render("Loading playlists...", True, TEXT_DIM)
+            screen.blit(loading, (400 - loading.get_width() // 2, 200))
+        else:
+            card_height = 56
+            gap = 8
+            start_y = 75
+            scroll_area_bottom = 415
+
+            for index, playlist in enumerate(state["playlists"]):
+                card_y = start_y + index * (card_height + gap) - state["playlist_scroll"]
+                card_rect = pygame.Rect(40, card_y, 720, card_height)
+
+                if card_y + card_height < start_y or card_y > scroll_area_bottom:
+                    continue
+
+                pygame.draw.rect(screen, SURFACE, card_rect, border_radius=10)
+                pygame.draw.rect(screen, BORDER, card_rect, width=1, border_radius=10)
+
+                name_label = font_medium.render(playlist["name"], True, TEXT_WHITE)
+                screen.blit(name_label, (card_rect.x + 20, card_rect.y + 10))
+
+                count_label = font_small.render("tap to browse", True, TEXT_DIM)
+                screen.blit(count_label, (card_rect.x + 20, card_rect.y + 32))
+
+                # Play arrow on right
+                arrow = font_medium.render(">", True, ACCENT)
+                screen.blit(arrow, (card_rect.right - 40, card_rect.centery - arrow.get_height() // 2))
+
+        draw_bottom_bar("[ * w * ]", "Pick a playlist to browse!")
+
+    else:
+        # Show tracks inside selected playlist
+        playlist_name = state["selected_playlist"]["name"] if state["selected_playlist"] else ""
+        subtitle = font_small.render(playlist_name, True, TEXT_DIM)
+        screen.blit(subtitle, (20, 55))
+        pygame.draw.line(screen, BORDER, (0, 75), (SCREEN_WIDTH, 75), 1)
+
+        if not state["playlist_tracks"]:
+            loading = font_medium.render("Loading tracks...", True, TEXT_DIM)
+            screen.blit(loading, (400 - loading.get_width() // 2, 200))
+        else:
+            card_height = 52
+            gap = 6
+            start_y = 85
+            scroll_area_bottom = 415
+
+            for index, track in enumerate(state["playlist_tracks"]):
+                card_y = start_y + index * (card_height + gap) - state["track_scroll"]
+                card_rect = pygame.Rect(40, card_y, 720, card_height)
+
+                if card_y + card_height < start_y or card_y > scroll_area_bottom:
+                    continue
+
+                pygame.draw.rect(screen, SURFACE, card_rect, border_radius=10)
+                pygame.draw.rect(screen, BORDER, card_rect, width=1, border_radius=10)
+
+                name_label = font_medium.render(track["name"], True, TEXT_WHITE)
+                screen.blit(name_label, (card_rect.x + 20, card_rect.y + 8))
+
+                artist_label = font_small.render(track["artist"], True, TEXT_DIM)
+                screen.blit(artist_label, (card_rect.x + 20, card_rect.y + 30))
+
+                duration_label = font_small.render(
+                    format_time(track["duration_seconds"]), True, MUTED)
+                screen.blit(duration_label, (card_rect.right - 70, card_rect.centery - 8))
+
+        draw_bottom_bar("[ ^ ^ ^ ]", "Tap a song to play it!")
+
 
 clock = pygame.time.Clock()
 
@@ -322,6 +408,16 @@ while True:
                 for button in home_buttons:
                     if button["rect"].collidepoint(mouse_pos):
                         current_screen = button["goto"]
+                        if button["goto"] == "playlists":
+                            state["playlists"] = []
+                            state["playlists_loaded"] = False
+                            state["playlist_scroll"] = 0
+                            state["playlist_screen"] = "playlists"
+                            state["playlist_tracks"] = []
+                            state["selected_playlist"] = None
+                            state["track_scroll"] = 0
+                        if button["goto"] == "music":
+                            spotify.play()    
 
             elif current_screen == "music":
                 if back_button["rect"].collidepoint(mouse_pos):
@@ -346,6 +442,14 @@ while True:
                     spotify.set_volume(int(state["volume"] * 100))
                 elif lyrics_button.collidepoint(mouse_pos):
                     state["show_lyrics"] = not state["show_lyrics"]
+                    if state["show_lyrics"]:
+                        # Force immediate lyrics fetch when switching to lyrics view
+                        lyrics.current_song_key = None
+                        lyrics.fetch_lyrics(
+                            spotify.current_track["title"],
+                            spotify.current_track["artist"],
+                            spotify.current_track["duration_seconds"]
+                        )
 
             elif current_screen == "speakers":
                 if back_button["rect"].collidepoint(mouse_pos):
@@ -360,6 +464,43 @@ while True:
                     for entry in speaker_card_rects:
                         if entry["rect"].collidepoint(mouse_pos) and entry["speaker"]["connected"]:
                             entry["speaker"]["on"] = not entry["speaker"]["on"]
+
+            elif current_screen == "playlists":
+                if back_button["rect"].collidepoint(mouse_pos):
+                    if state["playlist_screen"] == "tracks":
+                        # Go back to playlist list
+                        state["playlist_screen"] = "playlists"
+                        state["track_scroll"] = 0
+                    else:
+                        current_screen = "home"
+                else:
+                    if state["playlist_screen"] == "playlists":
+                        # Check if a playlist card was tapped
+                        card_height = 56
+                        gap = 8
+                        start_y = 75
+                        for index, playlist in enumerate(state["playlists"]):
+                            card_y = start_y + index * (card_height + gap) - state["playlist_scroll"]
+                            card_rect = pygame.Rect(40, card_y, 720, card_height)
+                            if card_rect.collidepoint(mouse_pos):
+                                state["selected_playlist"] = playlist
+                                state["playlist_screen"] = "tracks"
+                                state["track_scroll"] = 0
+                                state["playlist_tracks"] = spotify.get_playlist_tracks(playlist["id"])
+                                break
+                    else:
+                        # Check if a track card was tapped
+                        card_height = 52
+                        gap = 6
+                        start_y = 85
+                        for index, track in enumerate(state["playlist_tracks"]):
+                            card_y = start_y + index * (card_height + gap) - state["track_scroll"]
+                            card_rect = pygame.Rect(40, card_y, 720, card_height)
+                            if card_rect.collidepoint(mouse_pos):
+                                spotify.play_track(track["uri"])
+                                current_screen = "music"
+                                state["show_lyrics"] = False
+                                break
 
             else:
                 if back_button["rect"].collidepoint(mouse_pos):
@@ -378,6 +519,16 @@ while True:
             total_height = len(speakers) * (56 + 10)
             max_scroll = max(0, total_height - 230)
             state["speaker_scroll"] = max(0, min(max_scroll, state["speaker_scroll"] - event.y * 20))
+        
+        if event.type == pygame.MOUSEWHEEL and current_screen == "playlists":
+            if state["playlist_screen"] == "playlists":
+                total_height = len(state["playlists"]) * (56 + 8)
+                max_scroll = max(0, total_height - 340)
+                state["playlist_scroll"] = max(0, min(max_scroll, state["playlist_scroll"] - event.y * 20))
+            else:
+                total_height = len(state["playlist_tracks"]) * (52 + 6)
+                max_scroll = max(0, total_height - 330)
+                state["track_scroll"] = max(0, min(max_scroll, state["track_scroll"] - event.y * 20))
 
     if current_screen == "music":
         spotify.refresh()
@@ -386,6 +537,13 @@ while True:
             spotify.current_track["artist"],
             spotify.current_track["duration_seconds"]
         )
+
+    if current_screen == "playlists" and not state.get("playlists_loaded"):
+        state["playlists_loaded"] = True
+        state["playlists"] = spotify.get_playlists()
+        print(f"Loaded {len(state['playlists'])} playlists")
+        for p in state["playlists"]:
+            print(f"  - {p['name']}")
 
     screen.fill(BLACK)
 
@@ -397,6 +555,8 @@ while True:
         draw_speakers_screen()
     elif current_screen == "chat":
         draw_chat_screen()
+    elif current_screen == "playlists":
+        draw_playlists_screen()
 
     draw_clock()
     pygame.display.flip()
