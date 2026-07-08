@@ -45,7 +45,7 @@ prev_button     = pygame.Rect(295, 343, 50, 50)
 next_button     = pygame.Rect(465, 343, 50, 50)
 vol_down_button = pygame.Rect(170, 343, 50, 50)
 vol_up_button   = pygame.Rect(590, 343, 50, 50)
-lyrics_button   = pygame.Rect(580, 68, 100, 28)
+lyrics_button = pygame.Rect(20, 68, 80, 26)
 playlist_button = pygame.Rect(40, 310, 720, 50)
 
 
@@ -145,7 +145,7 @@ def draw_music_screen():
                                 lyrics_button.centery - toggle_label.get_height() // 2))
 
     if state["show_lyrics"]:
-        elapsed = spotify.current_track["elapsed_seconds"]
+        elapsed = spotify.get_interpolated_elapsed()
         current_index = lyrics.get_current_line_index(elapsed)
         lines = lyrics.get_lines_around(current_index, count=7)
 
@@ -193,10 +193,10 @@ def draw_music_screen():
     bar_x, bar_y, bar_width, bar_height = 150, 310, 500, 4
     pygame.draw.rect(screen, BORDER, (bar_x, bar_y, bar_width, bar_height), border_radius=2)
     duration = max(spotify.current_track["duration_seconds"], 1)
-    progress = min(spotify.current_track["elapsed_seconds"] / duration, 1.0)
+    elapsed = spotify.get_interpolated_elapsed()
+    progress = min(elapsed / duration, 1.0)
     pygame.draw.rect(screen, ACCENT, (bar_x, bar_y, int(bar_width * progress), bar_height), border_radius=2)
-
-    elapsed_label = font_tiny.render(format_time(spotify.current_track["elapsed_seconds"]), True, TEXT_DIM)
+    elapsed_label = font_tiny.render(format_time(int(spotify.get_interpolated_elapsed())), True, TEXT_DIM)    
     screen.blit(elapsed_label, (bar_x, bar_y + 10))
     total_label = font_tiny.render(format_time(spotify.current_track["duration_seconds"]), True, TEXT_DIM)
     screen.blit(total_label, (bar_x + bar_width - total_label.get_width(), bar_y + 10))

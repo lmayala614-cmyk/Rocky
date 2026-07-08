@@ -40,6 +40,8 @@ _cached_art_surface = None
 
 last_update_time = 0
 UPDATE_INTERVAL = 2.0
+_last_elapsed_at_refresh = 0
+_last_refresh_wall_time = None
 
 
 def refresh():
@@ -61,6 +63,8 @@ def refresh():
             current_track["album"]            = track["album"]["name"]
             current_track["duration_seconds"] = track["duration_ms"] // 1000
             current_track["elapsed_seconds"]  = playback["progress_ms"] // 1000
+            _last_elapsed_at_refresh = current_track["elapsed_seconds"]
+            _last_refresh_wall_time = time.time()
             current_track["is_playing"]       = playback["is_playing"]
             current_track["device"]           = playback["device"]["name"] if playback["device"] else None
 
@@ -217,3 +221,13 @@ def play_playlist(playlist_id):
         sp.start_playback(context_uri=f"spotify:playlist:{playlist_id}")
     except Exception as e:
         print(f"Play playlist failed: {e}")    
+
+def get_interpolated_elapsed():
+    if not current_track["is_playing"]:
+        return current_track["elapsed_seconds"]
+    if _last_refresh_wall_time is None:
+        return current_track["elapsed_seconds"]
+    seconds_since_refresh = time.time() - _last_refresh_wall_time
+    # Cap at 2.5 seconds so we never drift too far from Spotify's truth
+    seconds_since_refresh = min(seconds_since_refresh, 2.5)
+    return _last_elapsed_at_refresh + seconds_since_refresh     
