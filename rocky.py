@@ -185,8 +185,9 @@ def draw_home():
         pygame.draw.rect(screen, bg_color, rect, border_radius=10)
         pygame.draw.rect(screen, border_color, rect, width=1, border_radius=10)
         label = font_medium.render(button["label"], True, label_color)
+        text_x = rect.x + (rect.width - label.get_width()) // 2
         text_y = rect.y + (rect.height - label.get_height()) // 2
-        screen.blit(label, (rect.x + 20, text_y))
+        screen.blit(label, (text_x, text_y))
         home_buttons[i]["rect"] = rect
 
     draw_bottom_bar(state.get("rocky_song_face", "[ * w * ]"),
@@ -238,8 +239,16 @@ def draw_music_screen():
 
         art_surface = spotify.get_album_art(size=(180, 180))
         if art_surface:
-            screen.blit(art_surface, (art_rect.x, art_rect.y))
-            pygame.draw.rect(screen, BORDER, art_rect, width=1, border_radius=12)
+            # Create a rounded mask to clip the album art
+            mask = pygame.Surface((180, 180), pygame.SRCALPHA)
+            pygame.draw.rect(mask, (255, 255, 255, 255), (0, 0, 180, 180), border_radius=16)
+
+            # Apply mask — only keep pixels where mask is white
+            rounded_art = art_surface.copy().convert_alpha()
+            rounded_art.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
+
+            screen.blit(rounded_art, (art_rect.x, art_rect.y))
+            pygame.draw.rect(screen, BORDER, art_rect, width=1, border_radius=16)
         else:
             note_icon = font_large.render("?", True, TEXT_DIM)
             screen.blit(note_icon, (art_rect.centerx - note_icon.get_width() // 2,
@@ -539,7 +548,10 @@ while True:
                             state["selected_playlist"] = None
                             state["track_scroll"] = 0
                         if button["goto"] == "music":
-                            spotify.play()   
+                            if spotify.current_track["is_playing"]:
+                                pass  # already playing, do nothing
+                            else:
+                                spotify.play()
 
             elif current_screen == "music":
                 if back_button["rect"].collidepoint(mouse_pos):
@@ -593,14 +605,13 @@ while True:
                 if scroll_dragging:
                     pass
                 elif back_button["rect"].collidepoint(mouse_pos):
-                        # Go back to playlist list
+                    if state["playlist_screen"] == "tracks":
                         state["playlist_screen"] = "playlists"
                         state["track_scroll"] = 0
-                else:
+                    else:
                         current_screen = "home"
-            else:
-                if state["playlist_screen"] == "playlists":
-                        # Check if a playlist card was tapped
+                else:
+                    if state["playlist_screen"] == "playlists":
                         card_height = 56
                         gap = 8
                         start_y = 75
@@ -613,8 +624,7 @@ while True:
                                 state["track_scroll"] = 0
                                 state["playlist_tracks"] = spotify.get_playlist_tracks(playlist["id"])
                                 break
-                else:
-                        # Check if a track card was tapped
+                    else:
                         card_height = 52
                         gap = 6
                         start_y = 85
@@ -622,12 +632,13 @@ while True:
                             card_y = start_y + index * (card_height + gap) - state["track_scroll"]
                             card_rect = pygame.Rect(40, card_y, 720, card_height)
                             if card_rect.collidepoint(mouse_pos):
-                                spotify.play_track(track["uri"])
-                                current_screen = "music"
-                                state["show_lyrics"] = False
+                                if track["uri"]:
+                                    spotify.play_track(track["uri"])
+                                    current_screen = "music"
+                                    state["show_lyrics"] = False
                                 break
 
-        elif current_screen == "chat":
+            elif current_screen == "chat":
                 send_rect = pygame.Rect(612, 378, 148, 36)
                 if send_rect.collidepoint(mouse_pos):
                     if state["chat_input"].strip() and not rocky_brain.is_thinking():
@@ -636,6 +647,10 @@ while True:
                         state["chat_input"] = ""
                         rocky_brain.ask_rocky(user_msg)
                 elif back_button["rect"].collidepoint(mouse_pos):
+                    current_screen = "home"
+
+            else:
+                if back_button["rect"].collidepoint(mouse_pos):
                     current_screen = "home"
 
         if event.type == pygame.MOUSEBUTTONUP:
@@ -682,25 +697,27 @@ while True:
             state["chat_messages"].append({"role": "rocky", "text": response})
             state["chat_scroll"] = max(0, len(state["chat_messages"]) * 34 - 300)
     
+    # Always refresh Spotify so now playing stays current everywhere
+    spotify.refresh()
+
     if current_screen == "music":
-        spotify.refresh()
         lyrics.fetch_lyrics(
             spotify.current_track["title"],
             spotify.current_track["artist"],
             spotify.current_track["duration_seconds"]
         )
-        # Rocky reacts when song changes
-        current_title = spotify.current_track["title"]
-        if current_title != state["last_reacted_song"] and current_title != "Nothing playing":
-            state["last_reacted_song"] = current_title
-            rocky_brain.react_to_song(current_title, spotify.current_track["artist"])
+
+    # Rocky reacts when song changes - works from any screen
+    current_title = spotify.current_track["title"]
+    if current_title != state["last_reacted_song"] and current_title != "Nothing playing":
+        state["last_reacted_song"] = current_title
+        rocky_brain.react_to_song(current_title, spotify.current_track["artist"])
 
     # Pick up Rocky's song reaction
-    if current_screen == "music":
-        reaction = rocky_brain.get_pending_response()
-        if reaction:
-            state["rocky_song_comment"] = reaction
-            state["rocky_song_face"] = "[ ^ w ^ ]"
+    reaction = rocky_brain.get_pending_response()
+    if reaction and current_screen != "chat":
+        state["rocky_song_comment"] = reaction
+        state["rocky_song_face"] = "[ ^ w ^ ]"
 
     if current_screen == "playlists" and not state.get("playlists_loaded"):
         state["playlists_loaded"] = True
