@@ -3,6 +3,7 @@ import sys
 from datetime import datetime
 import spotify_controller as spotify
 import lyrics_controller as lyrics
+import rocky_brain
 
 pygame.init()
 pygame.mixer.init()
@@ -67,6 +68,9 @@ state = {
     "playlists_loaded": False,
     "track_scroll": 0,
     "playlist_screen": "playlists",  # "playlists" or "tracks"
+    "chat_messages": [],      # list of {"role": "user"/"rocky", "text": "..."}
+    "chat_input": "",         # what the user is currently typing
+    "chat_scroll": 0,         # scroll position for message history
 }
 
 speakers = [
@@ -305,9 +309,67 @@ def draw_speakers_screen():
 def draw_chat_screen():
     title = font_large.render("TALK TO ROCKY", True, ACCENT)
     screen.blit(title, (20, 20))
-    msg = font_medium.render("Rocky isn't listening yet.", True, TEXT_DIM)
-    screen.blit(msg, (40, 120))
-    draw_bottom_bar("[ ? . ? ]", "Say something! (coming soon)")
+    pygame.draw.line(screen, BORDER, (0, 60), (SCREEN_WIDTH, 60), 1)
+
+    # Message area - scrollable
+    msg_area_top = 70
+    msg_area_bottom = 370
+    msg_y = msg_area_top - state["chat_scroll"]
+    msg_height = 28
+
+    for msg in state["chat_messages"]:
+        if msg["role"] == "user":
+            color = ACCENT
+            prefix = "You: "
+        else:
+            color = TEXT_WHITE
+            prefix = "Rocky: "
+
+        # Word wrap long messages
+        full_text = prefix + msg["text"]
+        max_chars = 72
+        words = full_text.split(" ")
+        lines = []
+        current_line = ""
+
+        for word in words:
+            if len(current_line) + len(word) + 1 <= max_chars:
+                current_line += ("" if current_line == "" else " ") + word
+            else:
+                if current_line:
+                    lines.append(current_line)
+                current_line = word
+        if current_line:
+            lines.append(current_line)
+
+        for line in lines:
+            if msg_area_top <= msg_y <= msg_area_bottom:
+                rendered = font_small.render(line, True, color)
+                screen.blit(rendered, (20, msg_y))
+            msg_y += msg_height
+
+        msg_y += 6  # gap between messages
+
+    # Input box
+    input_rect = pygame.Rect(20, 378, 580, 36)
+    pygame.draw.rect(screen, SURFACE, input_rect, border_radius=8)
+    pygame.draw.rect(screen, ACCENT, input_rect, width=1, border_radius=8)
+    input_text = state["chat_input"] + "|"  # cursor
+    input_rendered = font_small.render(input_text, True, TEXT_WHITE)
+    screen.blit(input_rendered, (input_rect.x + 10, input_rect.y + 10))
+
+    # Send button
+    send_rect = pygame.Rect(612, 378, 148, 36)
+    pygame.draw.rect(screen, ACCENT, send_rect, border_radius=8)
+    send_label = font_small.render("Send", True, BLACK)
+    screen.blit(send_label, (send_rect.centerx - send_label.get_width() // 2,
+                              send_rect.centery - send_label.get_height() // 2))
+
+    # Rocky emoji face reacts to last message
+    if not state["chat_messages"]:
+        draw_bottom_bar("[ ? . ? ]", "Ask Rocky anything!")
+    else:
+        draw_bottom_bar("[ ^ w ^ ]", "Rocky is listening!")
 
 def draw_playlists_screen():
     title = font_large.render("PLAYLISTS", True, ACCENT)
@@ -502,8 +564,20 @@ while True:
                                 state["show_lyrics"] = False
                                 break
 
-            else:
-                if back_button["rect"].collidepoint(mouse_pos):
+            elif current_screen == "chat":
+                # Check send button
+                send_rect = pygame.Rect(612, 378, 148, 36)
+                if send_rect.collidepoint(mouse_pos):
+                    if state["chat_input"].strip():
+                        user_msg = state["chat_input"].strip()
+                        state["chat_messages"].append({"role": "user", "text": user_msg})
+                        state["chat_input"] = ""
+                        # Get Rocky's response
+                        response = rocky_brain.ask_rocky(user_msg)
+                        state["chat_messages"].append({"role": "rocky", "text": response})
+                        # Auto scroll to bottom
+                        state["chat_scroll"] = max(0, len(state["chat_messages"]) * 34 - 300)
+                elif back_button["rect"].collidepoint(mouse_pos):
                     current_screen = "home"
 
         if event.type == pygame.MOUSEBUTTONUP:
@@ -529,6 +603,21 @@ while True:
                 total_height = len(state["playlist_tracks"]) * (52 + 6)
                 max_scroll = max(0, total_height - 330)
                 state["track_scroll"] = max(0, min(max_scroll, state["track_scroll"] - event.y * 20))
+
+        if event.type == pygame.KEYDOWN and current_screen == "chat":
+            if event.key == pygame.K_RETURN:
+                if state["chat_input"].strip():
+                    user_msg = state["chat_input"].strip()
+                    state["chat_messages"].append({"role": "user", "text": user_msg})
+                    state["chat_input"] = ""
+                    response = rocky_brain.ask_rocky(user_msg)
+                    state["chat_messages"].append({"role": "rocky", "text": response})
+                    state["chat_scroll"] = max(0, len(state["chat_messages"]) * 34 - 300)
+            elif event.key == pygame.K_BACKSPACE:
+                state["chat_input"] = state["chat_input"][:-1]
+            else:
+                if event.unicode and len(state["chat_input"]) < 80:
+                    state["chat_input"] += event.unicode        
 
     if current_screen == "music":
         spotify.refresh()
