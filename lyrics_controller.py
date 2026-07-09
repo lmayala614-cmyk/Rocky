@@ -19,8 +19,10 @@ def fetch_lyrics(title, artist, duration_seconds=0):
     song_key = f"{clean_title}_{artist}".lower().strip()
 
     # Same song, already have lyrics or already tried
-    if song_key == current_song_key:
-        return
+    if song_key == current_song_key and current_lyrics:
+        return  # only skip if we actually have lyrics
+    elif song_key == current_song_key and not current_lyrics:
+        pass  # retry if previous attempt got nothing
 
     print(f"Fetching lyrics: '{clean_title}' by '{artist}'")
     current_song_key = song_key

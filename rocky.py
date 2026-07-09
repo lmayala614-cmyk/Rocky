@@ -11,16 +11,17 @@ pygame.mixer.init()
 SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 480
 
-BLACK      = (10,  13,  20)
-SURFACE    = (17,  21,  32)
-RAISED     = (24,  30,  46)
-BORDER     = (31,  42,  64)
-ACCENT     = (0,   212, 255)
-PURPLE     = (124, 58,  237)
-GREEN      = (0,   230, 118)
-TEXT_WHITE = (232, 237, 245)
-TEXT_DIM   = (136, 150, 170)
-MUTED      = (74,  85,  104)
+BLACK      = (12,  10,  18)
+SURFACE    = (22,  18,  32)
+RAISED     = (35,  28,  50)
+BORDER     = (55,  42,  75)
+ACCENT     = (180, 130, 255)   # soft purple instead of cold cyan
+ACCENT2    = (255, 160, 100)   # warm orange accent
+PURPLE     = (140, 80,  220)
+GREEN      = (100, 220, 160)
+TEXT_WHITE = (245, 240, 255)   # slightly warm white
+TEXT_DIM   = (160, 145, 185)   # warm lavender dim
+MUTED      = (90,  80,  110)
 
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption("Rocky")
@@ -54,6 +55,8 @@ scroll_drag_start_y = 0
 scroll_drag_start_offset = 0
 ticker_x = SCREEN_WIDTH  # starts off right edge
 ticker_speed = 1.5       # pixels per frame
+button_pressed = None
+button_press_timer = 0
 
 state = {
     "current_song_index": 0,
@@ -124,36 +127,32 @@ def draw_bottom_bar(face, comment):
     face_label = font_small.render(face, True, TEXT_WHITE)
     screen.blit(face_label, (rocky_rect.x + 10, rocky_rect.y + 20))
 
-    # Scrolling ticker text
+    # Only scroll if text is too wide to fit, otherwise draw static
     comment_surface = font_small.render(comment, True, TEXT_DIM)
     comment_width = comment_surface.get_width()
-
-    # Clip drawing to the rocky_rect area so text doesn't bleed outside
     ticker_area = pygame.Rect(rocky_rect.x + 110, rocky_rect.y, rocky_rect.width - 115, 40)
-    old_clip = screen.get_clip()
-    screen.set_clip(ticker_area)
-    screen.blit(comment_surface, (ticker_area.x + ticker_x, rocky_rect.y + 20))
-    screen.set_clip(old_clip)
+    available_width = ticker_area.width
 
-    # Advance ticker
-    ticker_x -= ticker_speed
-    if ticker_x < -comment_width:
-        ticker_x = ticker_area.width  # reset to right edge
+    if comment_width <= available_width:
+        # Short text — just draw it static, no scrolling
+        screen.blit(comment_surface, (ticker_area.x, rocky_rect.y + 20))
+    else:
+        # Long text — scroll it
+        old_clip = screen.get_clip()
+        screen.set_clip(ticker_area)
+        screen.blit(comment_surface, (ticker_area.x + ticker_x, rocky_rect.y + 20))
+        screen.set_clip(old_clip)
+        ticker_x -= ticker_speed
+        if ticker_x < -comment_width:
+            ticker_x = available_width
 
 
 def draw_home():
-    # Rocky title + orb
     title = font_large.render("ROCKY", True, ACCENT)
     screen.blit(title, (20, 20))
 
-    # Animated status dot
-    now = datetime.now()
-    pulse = abs((now.second % 2) - 0) == 0
-    dot_color = ACCENT if pulse else PURPLE
-    pygame.draw.circle(screen, dot_color, (110, 34), 6)
-
     status = font_small.render("online . ready", True, TEXT_DIM)
-    screen.blit(status, (124, 28))
+    screen.blit(status, (title.get_width() + 28, 30))
 
     # Show what's currently playing on home screen
     if spotify.current_track["title"] != "Nothing playing":
@@ -173,15 +172,21 @@ def draw_home():
     pygame.draw.line(screen, BORDER, (0, 100), (SCREEN_WIDTH, 100), 1)
 
     # Buttons — shift down slightly to make room for now playing
-    buttons_y = [120, 190, 260, 330]
+    buttons_y = [130, 195, 260, 325]
+    btn_width = 500
+    btn_x = (SCREEN_WIDTH - btn_width) // 2  # centers them
+
     for i, button in enumerate(home_buttons):
-        rect = pygame.Rect(40, buttons_y[i], 720, 50)
-        pygame.draw.rect(screen, RAISED, rect, border_radius=10)
-        pygame.draw.rect(screen, BORDER, rect, width=1, border_radius=10)
-        label = font_medium.render(button["label"], True, TEXT_WHITE)
+        rect = pygame.Rect(btn_x, buttons_y[i], btn_width, 44)
+        is_pressed = (button_pressed == i)
+        bg_color = ACCENT if is_pressed else RAISED
+        border_color = ACCENT if is_pressed else BORDER
+        label_color = BLACK if is_pressed else TEXT_WHITE
+        pygame.draw.rect(screen, bg_color, rect, border_radius=10)
+        pygame.draw.rect(screen, border_color, rect, width=1, border_radius=10)
+        label = font_medium.render(button["label"], True, label_color)
         text_y = rect.y + (rect.height - label.get_height()) // 2
         screen.blit(label, (rect.x + 20, text_y))
-        # Update the button rect for click detection
         home_buttons[i]["rect"] = rect
 
     draw_bottom_bar(state.get("rocky_song_face", "[ * w * ]"),
@@ -520,8 +525,10 @@ while True:
                 scroll_drag_start_offset = state["speaker_scroll"]
 
             if current_screen == "home":
-                for button in home_buttons:
+                for i, button in enumerate(home_buttons):
                     if button["rect"].collidepoint(mouse_pos):
+                        button_pressed = i
+                        button_press_timer = 0.15  # seconds to show flash
                         current_screen = button["goto"]
                         if button["goto"] == "playlists":
                             state["playlists"] = []
@@ -532,7 +539,7 @@ while True:
                             state["selected_playlist"] = None
                             state["track_scroll"] = 0
                         if button["goto"] == "music":
-                            spotify.play()    
+                            spotify.play()   
 
             elif current_screen == "music":
                 if back_button["rect"].collidepoint(mouse_pos):
@@ -567,7 +574,9 @@ while True:
                         )
 
             elif current_screen == "speakers":
-                if back_button["rect"].collidepoint(mouse_pos):
+                if scroll_dragging:
+                    pass  # ignore clicks while scrolling
+                elif back_button["rect"].collidepoint(mouse_pos):
                     current_screen = "home"
                     state["speaker_scroll"] = 0
                 elif broadcast_button.collidepoint(mouse_pos):
@@ -581,15 +590,16 @@ while True:
                             entry["speaker"]["on"] = not entry["speaker"]["on"]
 
             elif current_screen == "playlists":
-                if back_button["rect"].collidepoint(mouse_pos):
-                    if state["playlist_screen"] == "tracks":
+                if scroll_dragging:
+                    pass
+                elif back_button["rect"].collidepoint(mouse_pos):
                         # Go back to playlist list
                         state["playlist_screen"] = "playlists"
                         state["track_scroll"] = 0
-                    else:
-                        current_screen = "home"
                 else:
-                    if state["playlist_screen"] == "playlists":
+                        current_screen = "home"
+            else:
+                if state["playlist_screen"] == "playlists":
                         # Check if a playlist card was tapped
                         card_height = 56
                         gap = 8
@@ -603,7 +613,7 @@ while True:
                                 state["track_scroll"] = 0
                                 state["playlist_tracks"] = spotify.get_playlist_tracks(playlist["id"])
                                 break
-                    else:
+                else:
                         # Check if a track card was tapped
                         card_height = 52
                         gap = 6
@@ -617,7 +627,7 @@ while True:
                                 state["show_lyrics"] = False
                                 break
 
-            elif current_screen == "chat":
+        elif current_screen == "chat":
                 send_rect = pygame.Rect(612, 378, 148, 36)
                 if send_rect.collidepoint(mouse_pos):
                     if state["chat_input"].strip() and not rocky_brain.is_thinking():
@@ -698,6 +708,11 @@ while True:
         print(f"Loaded {len(state['playlists'])} playlists")
         for p in state["playlists"]:
             print(f"  - {p['name']}")
+
+    if button_press_timer > 0:
+        button_press_timer -= dt
+        if button_press_timer <= 0:
+            button_pressed = None        
 
     screen.fill(BLACK)
 
