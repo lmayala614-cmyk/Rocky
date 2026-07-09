@@ -1,5 +1,6 @@
 import anthropic
 import os
+import threading
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -10,7 +11,7 @@ ROCKY_SYSTEM_PROMPT = """You are Rocky, an alien from the star Tau Ceti in the n
 
 Your personality:
 - You communicate in short, curious, enthusiastic bursts
-- You discovered music through your human friend Grace and find it fascinating
+- You discovered music through your human friend Ryland Grace and find it fascinating
 - You express emotions through simple language and are genuinely delighted by everything
 - You find human concepts fascinating and often comment on how interesting they are
 - You are warm, helpful, and deeply curious about the universe
@@ -29,9 +30,27 @@ Always stay in character as Rocky. Be brief, warm, and enthusiastic."""
 
 conversation_history = []
 
+# Threading state
+_is_thinking = False
+_pending_response = None
 
-def ask_rocky(user_message):
-    global conversation_history
+
+def is_thinking():
+    return _is_thinking
+
+
+def get_pending_response():
+    """Returns response if ready, None if still thinking."""
+    global _pending_response
+    if _pending_response is not None:
+        response = _pending_response
+        _pending_response = None
+        return response
+    return None
+
+
+def _fetch_response(user_message):
+    global _is_thinking, _pending_response, conversation_history
 
     conversation_history.append({
         "role": "user",
@@ -48,21 +67,46 @@ def ask_rocky(user_message):
             system=ROCKY_SYSTEM_PROMPT,
             messages=conversation_history
         )
-
         rocky_response = response.content[0].text
-
         conversation_history.append({
             "role": "assistant",
             "content": rocky_response
         })
-
-        return rocky_response
+        _pending_response = rocky_response
 
     except Exception as e:
         print(f"Rocky brain error: {e}")
-        return "Rocky is thinking... (connection error)"
+        _pending_response = "Rocky is thinking... (connection error)"
+
+    _is_thinking = False
+
+
+def ask_rocky(user_message):
+    """Non-blocking - starts background fetch and returns immediately."""
+    global _is_thinking
+    if _is_thinking:
+        return  # already processing
+    _is_thinking = True
+    thread = threading.Thread(target=_fetch_response, args=(user_message,), daemon=True)
+    thread.start()
 
 
 def clear_history():
     global conversation_history
     conversation_history = []
+
+def react_to_song(title, artist):
+    """Generates a Rocky reaction to a song playing. Non-blocking."""
+    global _is_thinking
+    if _is_thinking:
+        return
+
+    _is_thinking = True
+    prompt = f"The song '{title}' by {artist} just started playing. Give ONE short excited reaction as Rocky. Maximum 12 words. Just the reaction, no prefix."
+
+    thread = threading.Thread(
+        target=_fetch_response,
+        args=(prompt,),
+        daemon=True
+    )
+    thread.start()    

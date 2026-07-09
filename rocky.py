@@ -49,10 +49,11 @@ vol_up_button   = pygame.Rect(590, 343, 50, 50)
 lyrics_button = pygame.Rect(20, 68, 80, 26)
 playlist_button = pygame.Rect(40, 310, 720, 50)
 
-
 scroll_dragging = False
 scroll_drag_start_y = 0
 scroll_drag_start_offset = 0
+ticker_x = SCREEN_WIDTH  # starts off right edge
+ticker_speed = 1.5       # pixels per frame
 
 state = {
     "current_song_index": 0,
@@ -71,6 +72,9 @@ state = {
     "chat_messages": [],      # list of {"role": "user"/"rocky", "text": "..."}
     "chat_input": "",         # what the user is currently typing
     "chat_scroll": 0,         # scroll position for message history
+    "last_reacted_song": "",
+    "rocky_song_comment": "Hello! I am ready to help.",
+    "rocky_song_face": "[ * w * ]",
 }
 
 speakers = [
@@ -100,6 +104,8 @@ def draw_clock():
 
 
 def draw_bottom_bar(face, comment):
+    global ticker_x
+
     bottom_y = 425
     btn = pygame.Rect(20, bottom_y, 130, 40)
     back_button["rect"] = btn
@@ -113,27 +119,73 @@ def draw_bottom_bar(face, comment):
     pygame.draw.rect(screen, BORDER, rocky_rect, width=1, border_radius=8)
     header = font_tiny.render("ROCKY SAYS", True, ACCENT)
     screen.blit(header, (rocky_rect.x + 10, rocky_rect.y + 6))
+
+    # Rocky face - fixed left
     face_label = font_small.render(face, True, TEXT_WHITE)
     screen.blit(face_label, (rocky_rect.x + 10, rocky_rect.y + 20))
-    comment_label = font_small.render(comment, True, TEXT_DIM)
-    screen.blit(comment_label, (rocky_rect.x + 110, rocky_rect.y + 20))
+
+    # Scrolling ticker text
+    comment_surface = font_small.render(comment, True, TEXT_DIM)
+    comment_width = comment_surface.get_width()
+
+    # Clip drawing to the rocky_rect area so text doesn't bleed outside
+    ticker_area = pygame.Rect(rocky_rect.x + 110, rocky_rect.y, rocky_rect.width - 115, 40)
+    old_clip = screen.get_clip()
+    screen.set_clip(ticker_area)
+    screen.blit(comment_surface, (ticker_area.x + ticker_x, rocky_rect.y + 20))
+    screen.set_clip(old_clip)
+
+    # Advance ticker
+    ticker_x -= ticker_speed
+    if ticker_x < -comment_width:
+        ticker_x = ticker_area.width  # reset to right edge
 
 
 def draw_home():
+    # Rocky title + orb
     title = font_large.render("ROCKY", True, ACCENT)
     screen.blit(title, (20, 20))
+
+    # Animated status dot
+    now = datetime.now()
+    pulse = abs((now.second % 2) - 0) == 0
+    dot_color = ACCENT if pulse else PURPLE
+    pygame.draw.circle(screen, dot_color, (110, 34), 6)
+
     status = font_small.render("online . ready", True, TEXT_DIM)
-    screen.blit(status, (22, 56))
-    pygame.draw.line(screen, BORDER, (0, 75), (SCREEN_WIDTH, 75), 1)
+    screen.blit(status, (124, 28))
 
-    for button in home_buttons:
-        pygame.draw.rect(screen, RAISED, button["rect"], border_radius=10)
-        pygame.draw.rect(screen, BORDER, button["rect"], width=1, border_radius=10)
+    # Show what's currently playing on home screen
+    if spotify.current_track["title"] != "Nothing playing":
+        now_label = font_tiny.render("NOW PLAYING", True, MUTED)
+        screen.blit(now_label, (20, 68))
+        song_label = font_small.render(
+            f"{spotify.current_track['title']} - {spotify.current_track['artist']}",
+            True, TEXT_DIM)
+        # Truncate if too long
+        max_width = SCREEN_WIDTH - 40
+        while song_label.get_width() > max_width:
+            truncated = f"{spotify.current_track['title'][:20]}... - {spotify.current_track['artist']}"
+            song_label = font_small.render(truncated, True, TEXT_DIM)
+            break
+        screen.blit(song_label, (20, 82))
+
+    pygame.draw.line(screen, BORDER, (0, 100), (SCREEN_WIDTH, 100), 1)
+
+    # Buttons — shift down slightly to make room for now playing
+    buttons_y = [120, 190, 260, 330]
+    for i, button in enumerate(home_buttons):
+        rect = pygame.Rect(40, buttons_y[i], 720, 50)
+        pygame.draw.rect(screen, RAISED, rect, border_radius=10)
+        pygame.draw.rect(screen, BORDER, rect, width=1, border_radius=10)
         label = font_medium.render(button["label"], True, TEXT_WHITE)
-        text_y = button["rect"].y + (button["rect"].height - label.get_height()) // 2
-        screen.blit(label, (button["rect"].x + 20, text_y))
+        text_y = rect.y + (rect.height - label.get_height()) // 2
+        screen.blit(label, (rect.x + 20, text_y))
+        # Update the button rect for click detection
+        home_buttons[i]["rect"] = rect
 
-    draw_bottom_bar("[ * w * ]", "Hello! I am ready to help.")
+    draw_bottom_bar(state.get("rocky_song_face", "[ * w * ]"),
+                    state.get("rocky_song_comment", "Hello! I am ready to help."))
 
 
 def draw_music_screen():
@@ -239,7 +291,7 @@ def draw_music_screen():
     screen.blit(vol_pct, (vol_bar_x + vol_bar_width // 2 - vol_pct.get_width() // 2, vol_bar_y + 10))
 
     if spotify.current_track["is_playing"]:
-        draw_bottom_bar("[ ~ ~ ~ ]", "This song has good energy!")
+        draw_bottom_bar(state["rocky_song_face"], state["rocky_song_comment"])
     else:
         draw_bottom_bar("[ . _ . ]", "Paused. Take your time, human.")
 
@@ -365,8 +417,9 @@ def draw_chat_screen():
     screen.blit(send_label, (send_rect.centerx - send_label.get_width() // 2,
                               send_rect.centery - send_label.get_height() // 2))
 
-    # Rocky emoji face reacts to last message
-    if not state["chat_messages"]:
+    if rocky_brain.is_thinking():
+        draw_bottom_bar("[ . . . ]", "Rocky is thinking...")
+    elif not state["chat_messages"]:
         draw_bottom_bar("[ ? . ? ]", "Ask Rocky anything!")
     else:
         draw_bottom_bar("[ ^ w ^ ]", "Rocky is listening!")
@@ -565,18 +618,13 @@ while True:
                                 break
 
             elif current_screen == "chat":
-                # Check send button
                 send_rect = pygame.Rect(612, 378, 148, 36)
                 if send_rect.collidepoint(mouse_pos):
-                    if state["chat_input"].strip():
+                    if state["chat_input"].strip() and not rocky_brain.is_thinking():
                         user_msg = state["chat_input"].strip()
                         state["chat_messages"].append({"role": "user", "text": user_msg})
                         state["chat_input"] = ""
-                        # Get Rocky's response
-                        response = rocky_brain.ask_rocky(user_msg)
-                        state["chat_messages"].append({"role": "rocky", "text": response})
-                        # Auto scroll to bottom
-                        state["chat_scroll"] = max(0, len(state["chat_messages"]) * 34 - 300)
+                        rocky_brain.ask_rocky(user_msg)
                 elif back_button["rect"].collidepoint(mouse_pos):
                     current_screen = "home"
 
@@ -606,19 +654,24 @@ while True:
 
         if event.type == pygame.KEYDOWN and current_screen == "chat":
             if event.key == pygame.K_RETURN:
-                if state["chat_input"].strip():
+                if state["chat_input"].strip() and not rocky_brain.is_thinking():
                     user_msg = state["chat_input"].strip()
                     state["chat_messages"].append({"role": "user", "text": user_msg})
                     state["chat_input"] = ""
-                    response = rocky_brain.ask_rocky(user_msg)
-                    state["chat_messages"].append({"role": "rocky", "text": response})
-                    state["chat_scroll"] = max(0, len(state["chat_messages"]) * 34 - 300)
+                    rocky_brain.ask_rocky(user_msg)
             elif event.key == pygame.K_BACKSPACE:
                 state["chat_input"] = state["chat_input"][:-1]
             else:
                 if event.unicode and len(state["chat_input"]) < 80:
                     state["chat_input"] += event.unicode        
 
+    # Check if Rocky has a pending response ready
+    if current_screen == "chat":
+        response = rocky_brain.get_pending_response()
+        if response:
+            state["chat_messages"].append({"role": "rocky", "text": response})
+            state["chat_scroll"] = max(0, len(state["chat_messages"]) * 34 - 300)
+    
     if current_screen == "music":
         spotify.refresh()
         lyrics.fetch_lyrics(
@@ -626,6 +679,18 @@ while True:
             spotify.current_track["artist"],
             spotify.current_track["duration_seconds"]
         )
+        # Rocky reacts when song changes
+        current_title = spotify.current_track["title"]
+        if current_title != state["last_reacted_song"] and current_title != "Nothing playing":
+            state["last_reacted_song"] = current_title
+            rocky_brain.react_to_song(current_title, spotify.current_track["artist"])
+
+    # Pick up Rocky's song reaction
+    if current_screen == "music":
+        reaction = rocky_brain.get_pending_response()
+        if reaction:
+            state["rocky_song_comment"] = reaction
+            state["rocky_song_face"] = "[ ^ w ^ ]"
 
     if current_screen == "playlists" and not state.get("playlists_loaded"):
         state["playlists_loaded"] = True
