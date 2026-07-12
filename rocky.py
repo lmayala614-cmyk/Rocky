@@ -4,6 +4,7 @@ from datetime import datetime
 import spotify_controller as spotify
 import lyrics_controller as lyrics
 import rocky_brain
+import home_controller as home
 
 pygame.init()
 pygame.mixer.init()
@@ -78,6 +79,12 @@ state = {
     "last_reacted_song": "",
     "rocky_song_comment": "Hello! I am ready to help.",
     "rocky_song_face": "[ * w * ]",
+    "home_page": 0,           # 0 = main menu, 1 = smart home
+    "swipe_start_x": 0,       # where swipe started
+    "swipe_active": False,
+    "smarthome_devices": [
+        {"name": "TV Lights", "device_key": "tv_lights", "on": False},
+    ],        # currently swiping
 }
 
 speakers = [
@@ -148,33 +155,52 @@ def draw_bottom_bar(face, comment):
 
 
 def draw_home():
+    # Header - same on all pages
     title = font_large.render("ROCKY", True, ACCENT)
     screen.blit(title, (20, 20))
-
     status = font_small.render("online . ready", True, TEXT_DIM)
     screen.blit(status, (title.get_width() + 28, 30))
 
-    # Show what's currently playing on home screen
     if spotify.current_track["title"] != "Nothing playing":
         now_label = font_tiny.render("NOW PLAYING", True, MUTED)
         screen.blit(now_label, (20, 68))
-        song_label = font_small.render(
-            f"{spotify.current_track['title']} - {spotify.current_track['artist']}",
-            True, TEXT_DIM)
-        # Truncate if too long
-        max_width = SCREEN_WIDTH - 40
-        while song_label.get_width() > max_width:
-            truncated = f"{spotify.current_track['title'][:20]}... - {spotify.current_track['artist']}"
-            song_label = font_small.render(truncated, True, TEXT_DIM)
-            break
+        song_text = f"{spotify.current_track['title']} - {spotify.current_track['artist']}"
+        song_label = font_small.render(song_text, True, TEXT_DIM)
+        if song_label.get_width() > SCREEN_WIDTH - 40:
+            song_text = f"{spotify.current_track['title'][:20]}... - {spotify.current_track['artist']}"
+            song_label = font_small.render(song_text, True, TEXT_DIM)
         screen.blit(song_label, (20, 82))
 
     pygame.draw.line(screen, BORDER, (0, 100), (SCREEN_WIDTH, 100), 1)
 
-    # Buttons — shift down slightly to make room for now playing
+    if state["home_page"] == 0:
+        draw_home_page_main()
+    elif state["home_page"] == 1:
+        draw_home_page_smarthome()
+
+    # Page dots at bottom center
+    total_pages = 2
+    dot_y = 410
+    dot_spacing = 20
+    total_dot_width = (total_pages - 1) * dot_spacing
+    dot_start_x = (SCREEN_WIDTH - total_dot_width) // 2
+
+    for i in range(total_pages):
+        dot_x = dot_start_x + i * dot_spacing
+        color = ACCENT if i == state["home_page"] else MUTED
+        radius = 5 if i == state["home_page"] else 3
+        pygame.draw.circle(screen, color, (dot_x, dot_y), radius)
+
+    draw_bottom_bar(
+        state.get("rocky_song_face", "[ * w * ]"),
+        state.get("rocky_song_comment", "Hello! I am ready to help.")
+    )
+
+
+def draw_home_page_main():
     buttons_y = [130, 195, 260, 325]
     btn_width = 500
-    btn_x = (SCREEN_WIDTH - btn_width) // 2  # centers them
+    btn_x = (SCREEN_WIDTH - btn_width) // 2
 
     for i, button in enumerate(home_buttons):
         rect = pygame.Rect(btn_x, buttons_y[i], btn_width, 44)
@@ -190,8 +216,38 @@ def draw_home():
         screen.blit(label, (text_x, text_y))
         home_buttons[i]["rect"] = rect
 
-    draw_bottom_bar(state.get("rocky_song_face", "[ * w * ]"),
-                    state.get("rocky_song_comment", "Hello! I am ready to help."))
+
+def draw_home_page_smarthome():
+    subtitle = font_small.render("SMART HOME", True, ACCENT)
+    screen.blit(subtitle, (20, 110))
+
+    card_height = 60
+    gap = 10
+    start_y = 135
+
+    for index, device in enumerate(state["smarthome_devices"]):
+        card_y = start_y + index * (card_height + gap)
+        card_rect = pygame.Rect(40, card_y, 720, card_height)
+
+        border_color = ACCENT if device["on"] else BORDER
+        pygame.draw.rect(screen, SURFACE, card_rect, border_radius=10)
+        pygame.draw.rect(screen, border_color, card_rect, width=1, border_radius=10)
+
+        dot_color = ACCENT if device["on"] else MUTED
+        pygame.draw.circle(screen, dot_color, (card_rect.x + 28, card_rect.centery), 7)
+
+        name_label = font_medium.render(device["name"], True, TEXT_WHITE)
+        screen.blit(name_label, (card_rect.x + 50, card_rect.y + 10))
+
+        status_label = font_small.render("ON" if device["on"] else "OFF",
+                                          True, ACCENT if device["on"] else MUTED)
+        screen.blit(status_label, (card_rect.x + 50, card_rect.y + 34))
+
+        toggle_rect = pygame.Rect(card_rect.right - 75, card_rect.centery - 13, 55, 26)
+        toggle_color = ACCENT if device["on"] else MUTED
+        pygame.draw.rect(screen, toggle_color, toggle_rect, border_radius=13)
+        circle_x = toggle_rect.right - 13 if device["on"] else toggle_rect.left + 13
+        pygame.draw.circle(screen, BLACK, (circle_x, toggle_rect.centery), 10)
 
 
 def draw_music_screen():
@@ -525,33 +581,60 @@ while True:
             pygame.quit()
             sys.exit()
 
+        # Swipe detection for home screen page switching
+        if event.type == pygame.MOUSEBUTTONDOWN and current_screen == "home":
+            state["swipe_start_x"] = event.pos[0]
+            state["swipe_active"] = True
+
+        if event.type == pygame.MOUSEBUTTONUP and current_screen == "home":
+            if state["swipe_active"]:
+                swipe_distance = event.pos[0] - state["swipe_start_x"]
+                if swipe_distance < -80:  # swiped left
+                    state["home_page"] = min(1, state["home_page"] + 1)
+                elif swipe_distance > 80:  # swiped right
+                    state["home_page"] = max(0, state["home_page"] - 1)
+            state["swipe_active"] = False    
+
         if event.type == pygame.MOUSEBUTTONDOWN:
             mouse_pos = event.pos
 
             if current_screen == "speakers":
-                scroll_dragging = True
                 scroll_drag_start_y = event.pos[1]
                 scroll_drag_start_offset = state["speaker_scroll"]
 
             if current_screen == "home":
-                for i, button in enumerate(home_buttons):
-                    if button["rect"].collidepoint(mouse_pos):
-                        button_pressed = i
-                        button_press_timer = 0.15  # seconds to show flash
-                        current_screen = button["goto"]
-                        if button["goto"] == "playlists":
-                            state["playlists"] = []
-                            state["playlists_loaded"] = False
-                            state["playlist_scroll"] = 0
-                            state["playlist_screen"] = "playlists"
-                            state["playlist_tracks"] = []
-                            state["selected_playlist"] = None
-                            state["track_scroll"] = 0
-                        if button["goto"] == "music":
-                            if spotify.current_track["is_playing"]:
-                                pass  # already playing, do nothing
-                            else:
-                                spotify.play()
+                swipe_distance = abs(mouse_pos[0] - state["swipe_start_x"])
+
+                if swipe_distance < 10:  # it's a tap not a swipe
+                    if state["home_page"] == 0:
+                        for i, button in enumerate(home_buttons):
+                            if button["rect"].collidepoint(mouse_pos):
+                                button_pressed = i
+                                button_press_timer = 0.15
+                                current_screen = button["goto"]
+                                if button["goto"] == "playlists":
+                                    state["playlists"] = []
+                                    state["playlists_loaded"] = False
+                                    state["playlist_scroll"] = 0
+                                    state["playlist_screen"] = "playlists"
+                                    state["playlist_tracks"] = []
+                                    state["selected_playlist"] = None
+                                    state["track_scroll"] = 0
+                                if button["goto"] == "music":
+                                    if not spotify.current_track["is_playing"]:
+                                        spotify.play()
+
+                    elif state["home_page"] == 1:
+                        card_height = 60
+                        gap = 10
+                        start_y = 135
+                        for index, device in enumerate(state["smarthome_devices"]):
+                            card_y = start_y + index * (card_height + gap)
+                            card_rect = pygame.Rect(40, card_y, 720, card_height)
+                            if card_rect.collidepoint(mouse_pos):
+                                home.toggle(device["device_key"])
+                                device["on"] = not device["on"]
+                                break
 
             elif current_screen == "music":
                 if back_button["rect"].collidepoint(mouse_pos):
@@ -577,7 +660,6 @@ while True:
                 elif lyrics_button.collidepoint(mouse_pos):
                     state["show_lyrics"] = not state["show_lyrics"]
                     if state["show_lyrics"]:
-                        # Force immediate lyrics fetch when switching to lyrics view
                         lyrics.current_song_key = None
                         lyrics.fetch_lyrics(
                             spotify.current_track["title"],
@@ -587,10 +669,11 @@ while True:
 
             elif current_screen == "speakers":
                 if scroll_dragging:
-                    pass  # ignore clicks while scrolling
+                    pass
                 elif back_button["rect"].collidepoint(mouse_pos):
                     current_screen = "home"
                     state["speaker_scroll"] = 0
+                    scroll_dragging = False
                 elif broadcast_button.collidepoint(mouse_pos):
                     any_on = any(s["on"] for s in speakers if s["connected"])
                     for s in speakers:
@@ -602,9 +685,7 @@ while True:
                             entry["speaker"]["on"] = not entry["speaker"]["on"]
 
             elif current_screen == "playlists":
-                if scroll_dragging:
-                    pass
-                elif back_button["rect"].collidepoint(mouse_pos):
+                if back_button["rect"].collidepoint(mouse_pos):
                     if state["playlist_screen"] == "tracks":
                         state["playlist_screen"] = "playlists"
                         state["track_scroll"] = 0
@@ -656,6 +737,11 @@ while True:
         if event.type == pygame.MOUSEBUTTONUP:
             scroll_dragging = False
 
+        if event.type == pygame.MOUSEMOTION and current_screen == "speakers" and event.buttons[0]:
+            if not scroll_dragging:
+                if abs(event.pos[1] - scroll_drag_start_y) > 5:
+                    scroll_dragging = True
+
         if event.type == pygame.MOUSEMOTION and scroll_dragging and current_screen == "speakers":
             delta = scroll_drag_start_y - event.pos[1]
             total_height = len(speakers) * (56 + 10)
@@ -666,7 +752,7 @@ while True:
             total_height = len(speakers) * (56 + 10)
             max_scroll = max(0, total_height - 230)
             state["speaker_scroll"] = max(0, min(max_scroll, state["speaker_scroll"] - event.y * 20))
-        
+
         if event.type == pygame.MOUSEWHEEL and current_screen == "playlists":
             if state["playlist_screen"] == "playlists":
                 total_height = len(state["playlists"]) * (56 + 8)
@@ -688,16 +774,14 @@ while True:
                 state["chat_input"] = state["chat_input"][:-1]
             else:
                 if event.unicode and len(state["chat_input"]) < 80:
-                    state["chat_input"] += event.unicode        
+                    state["chat_input"] += event.unicode
 
-    # Check if Rocky has a pending response ready
     if current_screen == "chat":
         response = rocky_brain.get_pending_response()
         if response:
             state["chat_messages"].append({"role": "rocky", "text": response})
             state["chat_scroll"] = max(0, len(state["chat_messages"]) * 34 - 300)
-    
-    # Always refresh Spotify so now playing stays current everywhere
+
     spotify.refresh()
 
     if current_screen == "music":
@@ -707,13 +791,11 @@ while True:
             spotify.current_track["duration_seconds"]
         )
 
-    # Rocky reacts when song changes - works from any screen
     current_title = spotify.current_track["title"]
     if current_title != state["last_reacted_song"] and current_title != "Nothing playing":
         state["last_reacted_song"] = current_title
         rocky_brain.react_to_song(current_title, spotify.current_track["artist"])
 
-    # Pick up Rocky's song reaction
     reaction = rocky_brain.get_pending_response()
     if reaction and current_screen != "chat":
         state["rocky_song_comment"] = reaction
@@ -729,7 +811,7 @@ while True:
     if button_press_timer > 0:
         button_press_timer -= dt
         if button_press_timer <= 0:
-            button_pressed = None        
+            button_pressed = None
 
     screen.fill(BLACK)
 

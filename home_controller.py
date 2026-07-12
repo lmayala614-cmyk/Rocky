@@ -1,42 +1,49 @@
 import asyncio
-from kasa import SmartPlug
+from kasa import Discover
 
 DEVICES = {
     "tv_lights": "192.168.4.66",
 }
 
+
 async def _control(ip, action):
-    plug = SmartPlug(ip)
-    await plug.update()
+    device = await Discover.discover_single(ip)
+    await device.update()
     if action == "on":
-        await plug.turn_on()
+        await device.turn_on()
     elif action == "off":
-        await plug.turn_off()
+        await device.turn_off()
     elif action == "toggle":
-        if plug.is_on:
-            await plug.turn_off()
+        if device.is_on:
+            await device.turn_off()
         else:
-            await plug.turn_on()
-    return plug.is_on
+            await device.turn_on()
+    await device.update()
+    return device.is_on
+
 
 async def _get_state(ip):
-    plug = SmartPlug(ip)
-    await plug.update()
-    return plug.is_on
+    device = await Discover.discover_single(ip)
+    await device.update()
+    return device.is_on
 
-def turn_on(device):
-    if device in DEVICES:
-        asyncio.run(_control(DEVICES[device], "on"))
 
-def turn_off(device):
-    if device in DEVICES:
-        asyncio.run(_control(DEVICES[device], "off"))
+def turn_on(device_name):
+    if device_name in DEVICES:
+        asyncio.run(_control(DEVICES[device_name], "on"))
 
-def toggle(device):
-    if device in DEVICES:
-        asyncio.run(_control(DEVICES[device], "toggle"))
 
-def get_state(device):
-    if device in DEVICES:
-        return asyncio.run(_get_state(DEVICES[device]))
+def turn_off(device_name):
+    if device_name in DEVICES:
+        asyncio.run(_control(DEVICES[device_name], "off"))
+
+
+def toggle(device_name):
+    if device_name in DEVICES:
+        asyncio.run(_control(DEVICES[device_name], "toggle"))
+
+
+def get_state(device_name):
+    if device_name in DEVICES:
+        return asyncio.run(_get_state(DEVICES[device_name]))
     return False
