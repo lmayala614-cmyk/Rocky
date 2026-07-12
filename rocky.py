@@ -59,6 +59,8 @@ ticker_x = SCREEN_WIDTH  # starts off right edge
 ticker_speed = 1.5       # pixels per frame
 button_pressed = None
 button_press_timer = 0
+back_tap_count = 0
+back_tap_timer = 0
 
 state = {
     "current_song_index": 0,
@@ -113,6 +115,15 @@ def draw_clock():
     clock_label = font_small.render(time_string, True, TEXT_DIM)
     screen.blit(clock_label, (SCREEN_WIDTH - clock_label.get_width() - 20, 24))
 
+
+def handle_back_press():
+    global back_tap_count, back_tap_timer
+    back_tap_count += 1
+    back_tap_timer = 3.0
+    if back_tap_count >= 5:
+        pygame.quit()
+        sys.exit()
+    state["home_page"] = 0  # always return to page 1
 
 def draw_bottom_bar(face, comment):
     global ticker_x
@@ -613,6 +624,7 @@ while True:
                                 button_pressed = i
                                 button_press_timer = 0.15
                                 current_screen = button["goto"]
+                                state["home_page"] = 0
                                 if button["goto"] == "playlists":
                                     state["playlists"] = []
                                     state["playlists_loaded"] = False
@@ -639,6 +651,7 @@ while True:
 
             elif current_screen == "music":
                 if back_button["rect"].collidepoint(mouse_pos):
+                    handle_back_press()
                     pygame.mixer.music.stop()
                     state["is_playing"] = False
                     state["elapsed_seconds"] = 0
@@ -672,6 +685,7 @@ while True:
                 if scroll_dragging:
                     pass
                 elif back_button["rect"].collidepoint(mouse_pos):
+                    handle_back_press()
                     current_screen = "home"
                     state["speaker_scroll"] = 0
                     scroll_dragging = False
@@ -687,6 +701,7 @@ while True:
 
             elif current_screen == "playlists":
                 if back_button["rect"].collidepoint(mouse_pos):
+                    handle_back_press()
                     if state["playlist_screen"] == "tracks":
                         state["playlist_screen"] = "playlists"
                         state["track_scroll"] = 0
@@ -729,10 +744,15 @@ while True:
                         state["chat_input"] = ""
                         rocky_brain.ask_rocky(user_msg)
                 elif back_button["rect"].collidepoint(mouse_pos):
+                    handle_back_press()
                     current_screen = "home"
 
             else:
                 if back_button["rect"].collidepoint(mouse_pos):
+                    handle_back_press()
+                    pygame.mixer.music.stop()
+                    state["is_playing"] = False
+                    state["elapsed_seconds"] = 0
                     current_screen = "home"
 
         if event.type == pygame.MOUSEBUTTONUP:
@@ -740,7 +760,7 @@ while True:
 
         if event.type == pygame.MOUSEMOTION and current_screen == "speakers" and event.buttons[0]:
             if not scroll_dragging:
-                if abs(event.pos[1] - scroll_drag_start_y) > 5:
+                if abs(event.pos[1] - scroll_drag_start_y) > 15:
                     scroll_dragging = True
 
         if event.type == pygame.MOUSEMOTION and scroll_dragging and current_screen == "speakers":
@@ -763,6 +783,11 @@ while True:
                 total_height = len(state["playlist_tracks"]) * (52 + 6)
                 max_scroll = max(0, total_height - 330)
                 state["track_scroll"] = max(0, min(max_scroll, state["track_scroll"] - event.y * 20))
+
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
+                pygame.quit()
+                sys.exit()
 
         if event.type == pygame.KEYDOWN and current_screen == "chat":
             if event.key == pygame.K_RETURN:
@@ -813,6 +838,11 @@ while True:
         button_press_timer -= dt
         if button_press_timer <= 0:
             button_pressed = None
+
+    if back_tap_timer > 0:
+        back_tap_timer -= dt
+        if back_tap_timer <= 0:
+            back_tap_count = 0  # reset count if too slow        
 
     screen.fill(BLACK)
 
