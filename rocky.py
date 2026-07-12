@@ -24,7 +24,8 @@ TEXT_WHITE = (245, 240, 255)   # slightly warm white
 TEXT_DIM   = (160, 145, 185)   # warm lavender dim
 MUTED      = (90,  80,  110)
 
-screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.FULLSCREEN)
+SCREEN_WIDTH, SCREEN_HEIGHT = screen.get_size()
 pygame.display.set_caption("Rocky")
 
 font_large  = pygame.font.SysFont("monospace", 28, bold=True)
