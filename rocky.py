@@ -24,8 +24,14 @@ TEXT_WHITE = (245, 240, 255)   # slightly warm white
 TEXT_DIM   = (160, 145, 185)   # warm lavender dim
 MUTED      = (90,  80,  110)
 
-screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.FULLSCREEN)
-SCREEN_WIDTH, SCREEN_HEIGHT = screen.get_size()
+import platform
+if platform.system() == "Linux":
+    # Pi — run fullscreen
+    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.FULLSCREEN)
+    SCREEN_WIDTH, SCREEN_HEIGHT = screen.get_size()
+else:
+    # Mac — run in a normal window for development
+    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption("Rocky")
 
 font_large  = pygame.font.SysFont("monospace", 28, bold=True)
@@ -88,6 +94,7 @@ state = {
     "smarthome_devices": [
         {"name": "TV Lights", "device_key": "tv_lights", "on": False},
     ],        # currently swiping
+    "screen_at_mousedown": ""
 }
 
 speakers = [
@@ -593,22 +600,12 @@ while True:
             pygame.quit()
             sys.exit()
 
-        # Swipe detection for home screen page switching
-        if event.type == pygame.MOUSEBUTTONDOWN and current_screen == "home":
-            state["swipe_start_x"] = event.pos[0]
-            state["swipe_active"] = True
-
-        if event.type == pygame.MOUSEBUTTONUP and current_screen == "home":
-            if state["swipe_active"]:
-                swipe_distance = event.pos[0] - state["swipe_start_x"]
-                if swipe_distance < -80:  # swiped left
-                    state["home_page"] = min(1, state["home_page"] + 1)
-                elif swipe_distance > 80:  # swiped right
-                    state["home_page"] = max(0, state["home_page"] - 1)
-            state["swipe_active"] = False    
-
         if event.type == pygame.MOUSEBUTTONDOWN:
             mouse_pos = event.pos
+            state["screen_at_mousedown"] = current_screen
+            if current_screen == "home":
+                state["swipe_start_x"] = event.pos[0]
+                state["swipe_start_y"] = event.pos[1]
 
             if current_screen == "speakers":
                 scroll_drag_start_y = event.pos[1]
@@ -652,10 +649,11 @@ while True:
             elif current_screen == "music":
                 if back_button["rect"].collidepoint(mouse_pos):
                     handle_back_press()
+                    current_screen = "home"
+                    state["home_page"] = 0
                     pygame.mixer.music.stop()
                     state["is_playing"] = False
                     state["elapsed_seconds"] = 0
-                    current_screen = "home"
                 elif play_button.collidepoint(mouse_pos):
                     if spotify.current_track["is_playing"]:
                         spotify.pause()
@@ -687,6 +685,7 @@ while True:
                 elif back_button["rect"].collidepoint(mouse_pos):
                     handle_back_press()
                     current_screen = "home"
+                    state["home_page"] = 0
                     state["speaker_scroll"] = 0
                     scroll_dragging = False
                 elif broadcast_button.collidepoint(mouse_pos):
@@ -707,6 +706,7 @@ while True:
                         state["track_scroll"] = 0
                     else:
                         current_screen = "home"
+                        state["home_page"] = 0
                 else:
                     if state["playlist_screen"] == "playlists":
                         card_height = 56
@@ -746,6 +746,7 @@ while True:
                 elif back_button["rect"].collidepoint(mouse_pos):
                     handle_back_press()
                     current_screen = "home"
+                    state["home_page"] = 0
 
             else:
                 if back_button["rect"].collidepoint(mouse_pos):
@@ -754,9 +755,19 @@ while True:
                     state["is_playing"] = False
                     state["elapsed_seconds"] = 0
                     current_screen = "home"
+                    state["home_page"] = 0
 
         if event.type == pygame.MOUSEBUTTONUP:
             scroll_dragging = False
+            if current_screen == "home" and state.get("screen_at_mousedown") == "home":
+                horizontal = abs(event.pos[0] - state["swipe_start_x"])
+                vertical = abs(event.pos[1] - state["swipe_start_y"])
+                if horizontal > 120 and horizontal > vertical * 2:
+                    if event.pos[0] - state["swipe_start_x"] < -120:
+                        state["home_page"] = min(1, state["home_page"] + 1)
+                    elif event.pos[0] - state["swipe_start_x"] > 120:
+                        state["home_page"] = max(0, state["home_page"] - 1)
+
 
         if event.type == pygame.MOUSEMOTION and current_screen == "speakers" and event.buttons[0]:
             if not scroll_dragging:
@@ -842,7 +853,10 @@ while True:
     if back_tap_timer > 0:
         back_tap_timer -= dt
         if back_tap_timer <= 0:
-            back_tap_count = 0  # reset count if too slow        
+            back_tap_count = 0  # reset count if too slow 
+
+    if current_screen == "home":
+        print(f"home_page={state['home_page']} swipe_active={state['swipe_active']} swipe_from_home={state.get('swipe_from_home')}")               
 
     screen.fill(BLACK)
 
