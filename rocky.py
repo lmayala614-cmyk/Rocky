@@ -5,6 +5,7 @@ import spotify_controller as spotify
 import lyrics_controller as lyrics
 import rocky_brain
 import home_controller as home
+import random
 
 pygame.init()
 pygame.mixer.init()
@@ -50,13 +51,11 @@ home_buttons = [
 
 back_button = {"rect": pygame.Rect(20, 420, 120, 40)}
 broadcast_button = pygame.Rect(40, 75, 720, 45)
-play_button     = pygame.Rect(375, 330, 55, 55)
-prev_button     = pygame.Rect(295, 343, 50, 50)
-next_button     = pygame.Rect(465, 343, 50, 50)
-vol_down_button = pygame.Rect(170, 343, 50, 50)
-vol_up_button   = pygame.Rect(590, 343, 50, 50)
-lyrics_button = pygame.Rect(20, 68, 80, 26)
+play_button     = pygame.Rect(375, 385, 52, 52)
+prev_button     = pygame.Rect(298, 397, 44, 44)
+next_button     = pygame.Rect(462, 397, 44, 44)
 playlist_button = pygame.Rect(40, 310, 720, 50)
+art_click_rect  = pygame.Rect(30, 75, 200, 200)
 
 scroll_dragging = False
 scroll_drag_start_y = 0
@@ -67,6 +66,9 @@ button_pressed = None
 button_press_timer = 0
 back_tap_count = 0
 back_tap_timer = 0
+title_scroll_x = 0
+title_scroll_speed = 1.2
+last_title = ""
 
 state = {
     "current_song_index": 0,
@@ -94,7 +96,15 @@ state = {
     "smarthome_devices": [
         {"name": "TV Lights", "device_key": "tv_lights", "on": False},
     ],        # currently swiping
-    "screen_at_mousedown": ""
+    "screen_at_mousedown": "",
+    "lyrics_mode": False,          # False = art centered, True = lyrics showing
+    "art_slide_x": 0,              # current x offset of album art (animates)
+    "art_slide_progress": 0.0,     # 0.0 = centered, 1.0 = slid left
+    "bottom_bar_alpha": 255,       # opacity of bottom bar (255 = visible, 0 = hidden)
+    "bottom_bar_timer": 5.0,       # countdown before fade
+    "last_touch_time": 0,          # tracks when screen was last touched
+    "title_scroll_x": 0,
+    "last_scroll_title": ""
 }
 
 speakers = [
@@ -270,28 +280,132 @@ def draw_home_page_smarthome():
 
 
 def draw_music_screen():
+    import time
+    screen.fill(BLACK)
+
+    # Visualizer bars at top
+    viz_start_x = 260
+    viz_end_x = SCREEN_WIDTH - 80
+    viz_top = 5
+    viz_bottom = 55
+    bar_count = 32
+    bar_w = (viz_end_x - viz_start_x) // bar_count
+
+    for i in range(bar_count):
+        bar_h = random.randint(8, viz_bottom - viz_top)
+        alpha_surf = pygame.Surface((bar_w - 2, bar_h), pygame.SRCALPHA)
+        for y in range(bar_h):
+            alpha = int(55 * (1 - y / bar_h))
+            pygame.draw.line(alpha_surf, (180, 130, 255, alpha), (0, y), (bar_w - 3, y))
+        screen.blit(alpha_surf, (viz_start_x + i * bar_w, viz_top))
+
+    # Top bar
     title = font_large.render("NOW PLAYING", True, ACCENT)
     screen.blit(title, (20, 20))
     pygame.draw.line(screen, BORDER, (0, 60), (SCREEN_WIDTH, 60), 1)
 
-    toggle_color = ACCENT if state["show_lyrics"] else RAISED
-    pygame.draw.rect(screen, toggle_color, lyrics_button, border_radius=8)
-    pygame.draw.rect(screen, BORDER, lyrics_button, width=1, border_radius=8)
-    toggle_label = font_small.render("ART" if state["show_lyrics"] else "LYRICS", True, TEXT_WHITE)
-    screen.blit(toggle_label, (lyrics_button.centerx - toggle_label.get_width() // 2,
-                                lyrics_button.centery - toggle_label.get_height() // 2))
+    # Animate art slide
+    target = 1.0 if state["lyrics_mode"] else 0.0
+    has_lyrics = bool(lyrics.current_lyrics)
+    speed = 0.06 if has_lyrics else 0.02  # slow tick when no lyrics
+    state["art_slide_progress"] += (target - state["art_slide_progress"]) * speed
+    p = state["art_slide_progress"]
 
-    if state["show_lyrics"]:
+    # Album art — slides left and shrinks as lyrics mode activates
+    art_full_size = 220
+    art_full_x = (SCREEN_WIDTH - art_full_size) // 2
+    art_full_y = 80
+
+    art_small_size = 155
+    art_small_x = 25
+    art_small_y = 80
+
+    art_x = int(art_full_x + (art_small_x - art_full_x) * p)
+    art_y = int(art_full_y + (art_small_y - art_full_y) * p)
+    art_size = int(art_full_size + (art_small_size - art_full_size) * p)
+
+    art_rect = pygame.Rect(art_x, art_y, art_size, art_size)
+
+    # Update click rect to match current art position
+    art_click_rect.x = art_x
+    art_click_rect.y = art_y
+    art_click_rect.width = art_size
+    art_click_rect.height = art_size
+
+    pygame.draw.rect(screen, SURFACE, art_rect, border_radius=16)
+    art_surface = spotify.get_album_art(size=(art_size, art_size))
+    if art_surface:
+        art_surface = pygame.transform.scale(art_surface, (art_size, art_size))
+        mask = pygame.Surface((art_size, art_size), pygame.SRCALPHA)
+        pygame.draw.rect(mask, (255, 255, 255, 255), (0, 0, art_size, art_size), border_radius=16)
+        rounded_art = art_surface.copy().convert_alpha()
+        rounded_art.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
+        screen.blit(rounded_art, (art_rect.x, art_rect.y))
+        pygame.draw.rect(screen, BORDER, art_rect, width=1, border_radius=16)
+    else:
+        note_icon = font_large.render("?", True, TEXT_DIM)
+        screen.blit(note_icon, (art_rect.centerx - note_icon.get_width() // 2,
+                                 art_rect.centery - note_icon.get_height() // 2))
+
+    # Song info — fades out as lyrics mode activates
+    info_alpha = max(0, int(255 * (1 - p)))
+
+    if info_alpha > 0:
+        raw_title = spotify.current_track["title"]
+        title_surf_full = font_medium.render(raw_title, True, TEXT_WHITE)
+        title_width = title_surf_full.get_width()
+        max_title_width = 340
+
+        if title_width <= max_title_width:
+            # Short title — center it, no scrolling needed
+            title_surf_full.set_alpha(info_alpha)
+            screen.blit(title_surf_full,
+                        (SCREEN_WIDTH // 2 - title_width // 2, 318))
+        else:
+            # Long title — scroll it left continuously
+            title_clip = pygame.Surface((max_title_width, 30), pygame.SRCALPHA)
+            gap = 40
+            loop_width = title_width + gap
+            x_pos = -(state["title_scroll_x"] % loop_width)
+            title_surf_full.set_alpha(info_alpha)
+            title_clip.blit(title_surf_full, (x_pos, 0))
+            title_clip.blit(title_surf_full, (x_pos + loop_width, 0))
+            screen.blit(title_clip,
+                        (SCREEN_WIDTH // 2 - max_title_width // 2, 318))
+
+        # Artist always draws regardless of title length
+        artist_surf = font_small.render(spotify.current_track["artist"], True, TEXT_DIM)
+        artist_surf.set_alpha(info_alpha)
+        screen.blit(artist_surf, (SCREEN_WIDTH // 2 - artist_surf.get_width() // 2, 300))
+
+# Show song info under small art in lyrics mode
+    if p > 0.5:
+        small_info_alpha = int(255 * ((p - 0.5) * 2))
+        small_title = font_small.render(spotify.current_track["title"][:20] + ("..." if len(spotify.current_track["title"]) > 20 else ""), True, TEXT_WHITE)
+        small_artist = font_tiny.render(spotify.current_track["artist"], True, TEXT_DIM)
+        small_title.set_alpha(small_info_alpha)
+        small_artist.set_alpha(small_info_alpha)
+        screen.blit(small_title, (art_small_x, art_small_y + art_small_size + 8))
+        screen.blit(small_artist, (art_small_x, art_small_y + art_small_size + 26))
+
+    # Lyrics — fade in as lyrics mode activates
+    lyrics_alpha = max(0, int(255 * p))
+    if lyrics_alpha > 0 and p > 0.1:
         elapsed = spotify.get_interpolated_elapsed()
         current_index = lyrics.get_current_line_index(elapsed)
         lines = lyrics.get_lines_around(current_index, count=7)
 
+        right_col_x = art_small_x + art_small_size + 20
+        right_col_width = SCREEN_WIDTH - right_col_x - 20
+        right_col_center = right_col_x + right_col_width // 2
+
         if not lyrics.current_lyrics:
-            no_lyrics = font_medium.render("No lyrics found for this song.", True, MUTED)
-            screen.blit(no_lyrics, (400 - no_lyrics.get_width() // 2, 200))
+            no_lyrics = font_medium.render("No lyrics found.", True, MUTED)
+            no_lyrics.set_alpha(lyrics_alpha)
+            screen.blit(no_lyrics, (right_col_center - no_lyrics.get_width() // 2, 200))
         else:
             line_y = 75
-            line_height = 36
+            line_height = 32
             for text, is_current in lines:
                 if not text:
                     line_y += line_height
@@ -299,59 +413,53 @@ def draw_music_screen():
                 if is_current:
                     color = TEXT_WHITE
                     font_use = font_medium
+                    lh = 42
                 else:
                     color = MUTED
                     font_use = font_small
+                    lh = line_height
+
+                # Truncate if too wide for the column
+                max_width = SCREEN_WIDTH - (art_small_x + art_small_size + 30) - 20
+                while font_use.size(text)[0] > max_width and len(text) > 10:
+                    text = text[:-4] + "..."
                 rendered = font_use.render(text, True, color)
-                x = 400 - rendered.get_width() // 2
+                rendered.set_alpha(lyrics_alpha)
+                x = right_col_center - rendered.get_width() // 2
                 screen.blit(rendered, (x, line_y))
-                line_y += line_height
+                line_y += lh
 
-    else:
-        art_rect = pygame.Rect(300, 70, 180, 180)
-        pygame.draw.rect(screen, SURFACE, art_rect, border_radius=12)
-        pygame.draw.rect(screen, BORDER, art_rect, width=1, border_radius=12)
+    # Tap hint when in lyrics mode
+    if p > 0.8 and state["bottom_bar_alpha"] < 50:
+        hint = font_tiny.render("TAP TO SHOW CONTROLS", True, MUTED)
+        hint.set_alpha(60)
+        screen.blit(hint, (SCREEN_WIDTH // 2 - hint.get_width() // 2, 440))
 
-        art_surface = spotify.get_album_art(size=(180, 180))
-        if art_surface:
-            # Create a rounded mask to clip the album art
-            mask = pygame.Surface((180, 180), pygame.SRCALPHA)
-            pygame.draw.rect(mask, (255, 255, 255, 255), (0, 0, 180, 180), border_radius=16)
-
-            # Apply mask — only keep pixels where mask is white
-            rounded_art = art_surface.copy().convert_alpha()
-            rounded_art.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
-
-            screen.blit(rounded_art, (art_rect.x, art_rect.y))
-            pygame.draw.rect(screen, BORDER, art_rect, width=1, border_radius=16)
-        else:
-            note_icon = font_large.render("?", True, TEXT_DIM)
-            screen.blit(note_icon, (art_rect.centerx - note_icon.get_width() // 2,
-                                     art_rect.centery - note_icon.get_height() // 2))
-
-        title_text = font_medium.render(spotify.current_track["title"], True, TEXT_WHITE)
-        screen.blit(title_text, (400 - title_text.get_width() // 2, 260))
-
-        artist_text = font_small.render(spotify.current_track["artist"], True, TEXT_DIM)
-        screen.blit(artist_text, (400 - artist_text.get_width() // 2, 285))
-
-    bar_x, bar_y, bar_width, bar_height = 150, 310, 500, 4
-    pygame.draw.rect(screen, BORDER, (bar_x, bar_y, bar_width, bar_height), border_radius=2)
+    # Progress bar
+    bar_x = 30
+    bar_y = 360
+    bar_width_full = SCREEN_WIDTH - 60
+    pygame.draw.rect(screen, BORDER, (bar_x, bar_y, bar_width_full, 2), border_radius=2)
     duration = max(spotify.current_track["duration_seconds"], 1)
-    elapsed = spotify.get_interpolated_elapsed()
-    progress = min(elapsed / duration, 1.0)
-    pygame.draw.rect(screen, ACCENT, (bar_x, bar_y, int(bar_width * progress), bar_height), border_radius=2)
-    elapsed_label = font_tiny.render(format_time(int(spotify.get_interpolated_elapsed())), True, TEXT_DIM)    
-    screen.blit(elapsed_label, (bar_x, bar_y + 10))
-    total_label = font_tiny.render(format_time(spotify.current_track["duration_seconds"]), True, TEXT_DIM)
-    screen.blit(total_label, (bar_x + bar_width - total_label.get_width(), bar_y + 10))
+    elapsed_interp = spotify.get_interpolated_elapsed()
+    progress = min(elapsed_interp / duration, 1.0)
+    pygame.draw.rect(screen, ACCENT,
+                     (bar_x, bar_y, int(bar_width_full * progress), 2), border_radius=2)
 
+    elapsed_label = font_tiny.render(format_time(int(elapsed_interp)), True, TEXT_DIM)
+    screen.blit(elapsed_label, (bar_x, bar_y + 8))
+    total_label = font_tiny.render(
+        format_time(spotify.current_track["duration_seconds"]), True, TEXT_DIM)
+    screen.blit(total_label,
+                (bar_x + bar_width_full - total_label.get_width(), bar_y + 8))
+
+    # Controls
     pygame.draw.rect(screen, RAISED, prev_button, border_radius=25)
     prev_label = font_medium.render("|<", True, TEXT_DIM)
     screen.blit(prev_label, (prev_button.centerx - prev_label.get_width() // 2,
                               prev_button.centery - prev_label.get_height() // 2))
 
-    pygame.draw.circle(screen, ACCENT, play_button.center, 30)
+    pygame.draw.circle(screen, ACCENT, play_button.center, 28)
     play_symbol = "||" if spotify.current_track["is_playing"] else ">"
     play_label = font_medium.render(play_symbol, True, BLACK)
     screen.blit(play_label, (play_button.centerx - play_label.get_width() // 2,
@@ -362,27 +470,47 @@ def draw_music_screen():
     screen.blit(next_label, (next_button.centerx - next_label.get_width() // 2,
                               next_button.centery - next_label.get_height() // 2))
 
-    pygame.draw.rect(screen, RAISED, vol_down_button, border_radius=25)
-    vd_label = font_medium.render("v-", True, TEXT_DIM)
-    screen.blit(vd_label, (vol_down_button.centerx - vd_label.get_width() // 2,
-                            vol_down_button.centery - vd_label.get_height() // 2))
+    # Bottom bar with fade
+    bar_alpha = int(state["bottom_bar_alpha"])
+    if bar_alpha > 0:
+        # Back button
+        btn = pygame.Rect(20, 425, 130, 40)
+        back_button["rect"] = btn
+        btn_surf = pygame.Surface((130, 40), pygame.SRCALPHA)
+        pygame.draw.rect(btn_surf, (*RAISED, bar_alpha), (0, 0, 130, 40), border_radius=8)
+        pygame.draw.rect(btn_surf, (*BORDER, bar_alpha), (0, 0, 130, 40),
+                         width=1, border_radius=8)
+        screen.blit(btn_surf, (20, 425))
+        back_label = font_small.render("< Back", True, TEXT_DIM)
+        back_label.set_alpha(bar_alpha)
+        screen.blit(back_label, (40, 437))
 
-    pygame.draw.rect(screen, RAISED, vol_up_button, border_radius=25)
-    vu_label = font_medium.render("v+", True, TEXT_DIM)
-    screen.blit(vu_label, (vol_up_button.centerx - vu_label.get_width() // 2,
-                            vol_up_button.centery - vu_label.get_height() // 2))
+        # Rocky says
+        rocky_rect = pygame.Rect(170, 425, 590, 40)
+        rs_surf = pygame.Surface((590, 40), pygame.SRCALPHA)
+        pygame.draw.rect(rs_surf, (*RAISED, bar_alpha), (0, 0, 590, 40), border_radius=8)
+        pygame.draw.rect(rs_surf, (*BORDER, bar_alpha), (0, 0, 590, 40),
+                         width=1, border_radius=8)
+        screen.blit(rs_surf, (170, 425))
 
-    vol_bar_x, vol_bar_y, vol_bar_width, vol_bar_height = 150, 400, 500, 4
-    pygame.draw.rect(screen, BORDER, (vol_bar_x, vol_bar_y, vol_bar_width, vol_bar_height), border_radius=2)
-    filled = int(vol_bar_width * state["volume"])
-    pygame.draw.rect(screen, ACCENT, (vol_bar_x, vol_bar_y, filled, vol_bar_height), border_radius=2)
-    vol_pct = font_tiny.render(f"VOL  {int(state['volume'] * 100)}%", True, TEXT_DIM)
-    screen.blit(vol_pct, (vol_bar_x + vol_bar_width // 2 - vol_pct.get_width() // 2, vol_bar_y + 10))
+        header = font_tiny.render("ROCKY SAYS", True, ACCENT)
+        header.set_alpha(bar_alpha)
+        screen.blit(header, (180, 431))
 
-    if spotify.current_track["is_playing"]:
-        draw_bottom_bar(state["rocky_song_face"], state["rocky_song_comment"])
-    else:
-        draw_bottom_bar("[ . _ . ]", "Paused. Take your time, human.")
+        if spotify.current_track["is_playing"]:
+            face = state["rocky_song_face"]
+            comment = state["rocky_song_comment"]
+        else:
+            face = "[ . _ . ]"
+            comment = "Paused. Take your time, human."
+
+        face_label = font_small.render(face, True, TEXT_WHITE)
+        face_label.set_alpha(bar_alpha)
+        screen.blit(face_label, (180, 445))
+
+        comment_label = font_small.render(comment, True, TEXT_DIM)
+        comment_label.set_alpha(bar_alpha)
+        screen.blit(comment_label, (290, 445))
 
 
 def draw_speakers_screen():
@@ -633,6 +761,10 @@ while True:
                                 if button["goto"] == "music":
                                     if not spotify.current_track["is_playing"]:
                                         spotify.play()
+                                    state["lyrics_mode"] = False
+                                    state["art_slide_progress"] = 0.0
+                                    state["bottom_bar_alpha"] = 255
+                                    state["bottom_bar_timer"] = 5.0
 
                     elif state["home_page"] == 1:
                         card_height = 60
@@ -647,37 +779,46 @@ while True:
                                 break
 
             elif current_screen == "music":
-                if back_button["rect"].collidepoint(mouse_pos):
+                # Any tap resets the bottom bar fade timer
+                state["bottom_bar_timer"] = 5.0
+
+                if back_button["rect"].collidepoint(mouse_pos) and state["bottom_bar_alpha"] > 50:
                     handle_back_press()
                     current_screen = "home"
                     state["home_page"] = 0
                     pygame.mixer.music.stop()
                     state["is_playing"] = False
                     state["elapsed_seconds"] = 0
-                elif play_button.collidepoint(mouse_pos):
-                    if spotify.current_track["is_playing"]:
-                        spotify.pause()
-                    else:
-                        spotify.play()
-                elif next_button.collidepoint(mouse_pos):
-                    spotify.next_track()
-                elif prev_button.collidepoint(mouse_pos):
-                    spotify.prev_track()
-                elif vol_down_button.collidepoint(mouse_pos):
-                    state["volume"] = max(0.0, state["volume"] - 0.1)
-                    spotify.set_volume(int(state["volume"] * 100))
-                elif vol_up_button.collidepoint(mouse_pos):
-                    state["volume"] = min(1.0, state["volume"] + 0.1)
-                    spotify.set_volume(int(state["volume"] * 100))
-                elif lyrics_button.collidepoint(mouse_pos):
-                    state["show_lyrics"] = not state["show_lyrics"]
-                    if state["show_lyrics"]:
+                    state["lyrics_mode"] = False
+                    state["art_slide_progress"] = 0.0
+                    state["bottom_bar_alpha"] = 255
+                    state["bottom_bar_timer"] = 5.0
+
+                elif art_click_rect.collidepoint(mouse_pos):
+                    state["lyrics_mode"] = not state["lyrics_mode"]
+                    if state["lyrics_mode"]:
                         lyrics.current_song_key = None
                         lyrics.fetch_lyrics(
                             spotify.current_track["title"],
                             spotify.current_track["artist"],
                             spotify.current_track["duration_seconds"]
                         )
+
+                elif play_button.collidepoint(mouse_pos):
+                    if spotify.current_track["is_playing"]:
+                        spotify.pause()
+                    else:
+                        spotify.play()
+
+                elif next_button.collidepoint(mouse_pos):
+                    spotify.next_track()
+                    state["lyrics_mode"] = False
+                    state["art_slide_progress"] = 0.0
+
+                elif prev_button.collidepoint(mouse_pos):
+                    spotify.prev_track()
+                    state["lyrics_mode"] = False
+                    state["art_slide_progress"] = 0.0
 
             elif current_screen == "speakers":
                 if scroll_dragging:
@@ -853,10 +994,25 @@ while True:
     if back_tap_timer > 0:
         back_tap_timer -= dt
         if back_tap_timer <= 0:
-            back_tap_count = 0  # reset count if too slow 
+            back_tap_count = 0  # reset count if too slow              
 
-    if current_screen == "home":
-        print(f"home_page={state['home_page']} swipe_active={state['swipe_active']} swipe_from_home={state.get('swipe_from_home')}")               
+    # Bottom bar fade timer for music screen
+    if current_screen == "music":
+        import time
+        state["bottom_bar_timer"] -= dt
+        if state["bottom_bar_timer"] <= 0:
+            state["bottom_bar_alpha"] = max(0, state["bottom_bar_alpha"] - 8)
+        else:
+            state["bottom_bar_alpha"] = min(255, state["bottom_bar_alpha"] + 20)
+
+    # Advance title scroll when in art mode on music screen
+    if current_screen == "music" and not state["lyrics_mode"]:
+        # Reset scroll when song changes
+        if spotify.current_track["title"] != state.get("last_scroll_title", ""):
+            state["title_scroll_x"] = 0
+            state["last_scroll_title"] = spotify.current_track["title"]
+        else:
+            state["title_scroll_x"] = state.get("title_scroll_x", 0) + 1.2
 
     screen.fill(BLACK)
 
