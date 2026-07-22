@@ -771,7 +771,7 @@ while True:
 
         if event.type == pygame.MOUSEMOTION and current_screen == "speakers" and event.buttons[0]:
             if not scroll_dragging:
-                if abs(event.pos[1] - scroll_drag_start_y) > 15:
+                if abs(event.pos[1] - scroll_drag_start_y) > 25:
                     scroll_dragging = True
 
         if event.type == pygame.MOUSEMOTION and scroll_dragging and current_screen == "speakers":
