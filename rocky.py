@@ -6,9 +6,15 @@ import lyrics_controller as lyrics
 import rocky_brain
 import home_controller as home
 import random
+import math
+import colorsys
+import visualizer_controller as viz_ctrl
+import audio_analyzer
 
 pygame.init()
 pygame.mixer.init()
+
+audio_analyzer.start()
 
 SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 480
@@ -56,6 +62,7 @@ prev_button     = pygame.Rect(298, 397, 44, 44)
 next_button     = pygame.Rect(462, 397, 44, 44)
 playlist_button = pygame.Rect(40, 310, 720, 50)
 art_click_rect  = pygame.Rect(30, 75, 200, 200)
+viz_click_rect = pygame.Rect(260, 0, SCREEN_WIDTH - 340, 60)
 
 scroll_dragging = False
 scroll_drag_start_y = 0
@@ -104,7 +111,18 @@ state = {
     "bottom_bar_timer": 5.0,       # countdown before fade
     "last_touch_time": 0,          # tracks when screen was last touched
     "title_scroll_x": 0,
-    "last_scroll_title": ""
+    "last_scroll_title": "",
+    "viz_active": False,           # is visualizer fullscreen
+    "viz_stars": [],               # list of star objects
+    "viz_beat_pulse": 0.0,         # current beat intensity
+    "viz_narration": "",           # current Rocky comment
+    "viz_narration_x": 0,          # scroll position of narration
+    "viz_narration_timer": 0,      # countdown to next comment
+    "viz_tau_ceti_timer": 45,      # countdown to Tau Ceti state
+    "viz_tau_ceti_active": False,  # showing Tau Ceti
+    "viz_tau_ceti_size": 0,        # size of Tau Ceti star
+    "viz_state": "warp",           # warp / nebula / tau_ceti
+    "viz_scene": None,
 }
 
 speakers = [
@@ -292,7 +310,9 @@ def draw_music_screen():
     bar_w = (viz_end_x - viz_start_x) // bar_count
 
     for i in range(bar_count):
-        bar_h = random.randint(8, viz_bottom - viz_top)
+        _, _, _, overall = audio_analyzer.get_levels()
+        max_h = int((viz_bottom - viz_top) * (0.3 + overall * 0.7))
+        bar_h = random.randint(4, max(8, max_h))
         alpha_surf = pygame.Surface((bar_w - 2, bar_h), pygame.SRCALPHA)
         for y in range(bar_h):
             alpha = int(55 * (1 - y / bar_h))
@@ -641,6 +661,35 @@ def draw_chat_screen():
     else:
         draw_bottom_bar("[ ^ w ^ ]", "Rocky is listening!")
 
+def draw_visualizer_screen():
+    if state.get("viz_scene") is None:
+        state["viz_scene"] = viz_ctrl.init_scene(SCREEN_WIDTH, SCREEN_HEIGHT)
+
+    is_playing = spotify.current_track["is_playing"]
+    bass, mid, treble, overall = audio_analyzer.get_levels()
+
+    state["viz_scene"] = viz_ctrl.update_and_draw(
+        state["viz_scene"], screen, pygame,
+        SCREEN_WIDTH, SCREEN_HEIGHT, is_playing, 1/60,
+        bass, mid, treble
+    )
+
+    # Song info bottom left — always visible
+    if spotify.current_track["title"] != "Nothing playing":
+        song_surf = font_small.render(
+            spotify.current_track["title"], True, TEXT_WHITE)
+        artist_surf = font_tiny.render(
+            spotify.current_track["artist"], True, TEXT_DIM)
+        song_surf.set_alpha(200)
+        artist_surf.set_alpha(140)
+        screen.blit(song_surf, (20, SCREEN_HEIGHT - 52))
+        screen.blit(artist_surf, (20, SCREEN_HEIGHT - 32))
+
+    hint = font_tiny.render("TAP TO RETURN", True, MUTED)
+    hint.set_alpha(80)
+    screen.blit(hint, (SCREEN_WIDTH - hint.get_width() - 16,
+                        SCREEN_HEIGHT - 16))  
+
 def draw_playlists_screen():
     title = font_large.render("PLAYLISTS", True, ACCENT)
     screen.blit(title, (20, 20))
@@ -804,6 +853,10 @@ while True:
                             spotify.current_track["duration_seconds"]
                         )
 
+                elif viz_click_rect.collidepoint(mouse_pos):
+                    current_screen = "visualizer"
+                    state["viz_scene"] = viz_ctrl.init_scene(SCREEN_WIDTH, SCREEN_HEIGHT)      
+
                 elif play_button.collidepoint(mouse_pos):
                     if spotify.current_track["is_playing"]:
                         spotify.pause()
@@ -888,6 +941,11 @@ while True:
                     handle_back_press()
                     current_screen = "home"
                     state["home_page"] = 0
+
+
+            elif current_screen == "visualizer":
+                current_screen = "music"
+                state["viz_active"] = False
 
             else:
                 if back_button["rect"].collidepoint(mouse_pos):
@@ -1026,6 +1084,8 @@ while True:
         draw_chat_screen()
     elif current_screen == "playlists":
         draw_playlists_screen()
+    elif current_screen == "visualizer":
+        draw_visualizer_screen()    
 
     draw_clock()
     pygame.display.flip()
