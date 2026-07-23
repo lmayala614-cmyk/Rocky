@@ -10,6 +10,7 @@ import math
 import colorsys
 import visualizer_controller as viz_ctrl
 import audio_analyzer
+import vaporwave_viz
 
 pygame.init()
 pygame.mixer.init()
@@ -123,6 +124,8 @@ state = {
     "viz_tau_ceti_size": 0,        # size of Tau Ceti star
     "viz_state": "warp",           # warp / nebula / tau_ceti
     "viz_scene": None,
+    "viz_mode": 0,  # 0 = space, 1 = vaporwave
+    "viz_scene_vaporwave": None,
 }
 
 speakers = [
@@ -664,17 +667,47 @@ def draw_chat_screen():
 def draw_visualizer_screen():
     if state.get("viz_scene") is None:
         state["viz_scene"] = viz_ctrl.init_scene(SCREEN_WIDTH, SCREEN_HEIGHT)
+    if state.get("viz_scene_vaporwave") is None:
+        state["viz_scene_vaporwave"] = vaporwave_viz.init_vaporwave(
+            SCREEN_WIDTH, SCREEN_HEIGHT)
 
     is_playing = spotify.current_track["is_playing"]
     bass, mid, treble, overall = audio_analyzer.get_levels()
 
-    state["viz_scene"] = viz_ctrl.update_and_draw(
-        state["viz_scene"], screen, pygame,
-        SCREEN_WIDTH, SCREEN_HEIGHT, is_playing, 1/60,
-        bass, mid, treble
-    )
+    if state["viz_mode"] == 0:
+        state["viz_scene"] = viz_ctrl.update_and_draw(
+            state["viz_scene"], screen, pygame,
+            SCREEN_WIDTH, SCREEN_HEIGHT, is_playing, 1/60,
+            bass, mid, treble
+        )
+    elif state["viz_mode"] == 1:
+        state["viz_scene_vaporwave"] = vaporwave_viz.draw_vaporwave(
+            state["viz_scene_vaporwave"], screen, pygame,
+            SCREEN_WIDTH, SCREEN_HEIGHT, is_playing,
+            bass, mid, treble
+        )
 
-    # Song info bottom left — always visible
+    # Mode indicator dots — bigger and clearer
+    total_modes = 2
+    dot_y = 20
+    for i in range(total_modes):
+        dot_x = SCREEN_WIDTH // 2 - (total_modes * 20) // 2 + i * 20
+        color = ACCENT if i == state["viz_mode"] else MUTED
+        radius = 6 if i == state["viz_mode"] else 4
+        pygame.draw.circle(screen, color, (dot_x, dot_y), radius)
+
+    # Tap hint near dots
+    mode_hint = font_tiny.render("TAP TO SWITCH", True, MUTED)
+    mode_hint.set_alpha(80)
+    screen.blit(mode_hint, (SCREEN_WIDTH//2 - mode_hint.get_width()//2, 32))
+
+    # Return hint
+    return_hint = font_tiny.render("TAP ANYWHERE TO RETURN", True, MUTED)
+    return_hint.set_alpha(50)
+    screen.blit(return_hint, (SCREEN_WIDTH - return_hint.get_width() - 16,
+                              SCREEN_HEIGHT - 16))
+
+    # Song info bottom left
     if spotify.current_track["title"] != "Nothing playing":
         song_surf = font_small.render(
             spotify.current_track["title"], True, TEXT_WHITE)
@@ -685,10 +718,10 @@ def draw_visualizer_screen():
         screen.blit(song_surf, (20, SCREEN_HEIGHT - 52))
         screen.blit(artist_surf, (20, SCREEN_HEIGHT - 32))
 
-    hint = font_tiny.render("TAP TO RETURN", True, MUTED)
-    hint.set_alpha(80)
-    screen.blit(hint, (SCREEN_WIDTH - hint.get_width() - 16,
-                        SCREEN_HEIGHT - 16))  
+    # Tap song title to switch view hint
+    hint = font_tiny.render("TAP TITLE TO SWITCH VIEW", True, MUTED)
+    hint.set_alpha(60)
+    screen.blit(hint, (SCREEN_WIDTH - hint.get_width() - 16, SCREEN_HEIGHT - 16))
 
 def draw_playlists_screen():
     title = font_large.render("PLAYLISTS", True, ACCENT)
@@ -944,8 +977,23 @@ while True:
 
 
             elif current_screen == "visualizer":
-                current_screen = "music"
-                state["viz_active"] = False
+                # Top area — mode dots — cycle between views
+                mode_rect = pygame.Rect(SCREEN_WIDTH//2 - 30, 0, 60, 40)
+                # Song title area — also cycle views
+                title_rect = pygame.Rect(20, SCREEN_HEIGHT - 65, 300, 35)
+
+                if mode_rect.collidepoint(mouse_pos) or title_rect.collidepoint(mouse_pos):
+                    state["viz_mode"] = (state["viz_mode"] + 1) % 2
+                    if state["viz_mode"] == 1:
+                        state["viz_scene_vaporwave"] = vaporwave_viz.init_vaporwave(
+                            SCREEN_WIDTH, SCREEN_HEIGHT)
+                    else:
+                        state["viz_scene"] = viz_ctrl.init_scene(
+                            SCREEN_WIDTH, SCREEN_HEIGHT)
+                else:
+                    # Anywhere else — return to music
+                    current_screen = "music"
+                    state["viz_active"] = False
 
             else:
                 if back_button["rect"].collidepoint(mouse_pos):
