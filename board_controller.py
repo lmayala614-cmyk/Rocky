@@ -1,7 +1,13 @@
 import requests
 import threading
+import os
+from dotenv import load_dotenv
+import random
+
+load_dotenv()
 
 BOARD_URL = "https://pi-notes-board.lovable.app"
+API_KEY = os.getenv("BOARD_API_KEY")
 
 ROCKY_CONFIRMATIONS = [
     "Got it! Rocky add to board. Very organized!",
@@ -13,34 +19,26 @@ ROCKY_CONFIRMATIONS = [
     "Got it! Rocky note this. Time management — very human concept!",
 ]
 
-def _post_item(content, item_type="note"):
+def _post_item(content):
     try:
         response = requests.post(
-            f"{BOARD_URL}/api/pin",
-            json={
-                "content": content,
-                "type": item_type,
-                "source": "Rocky"
+            f"{BOARD_URL}/api/public/notes",
+            headers={
+                "content-type": "application/json",
+                "x-api-key": API_KEY
             },
+            json={"body": content},
             timeout=8
         )
-        print(f"Board response: {response.status_code}")
+        print(f"Board response: {response.status_code} {response.text[:100]}")
         return response.status_code < 300
     except Exception as e:
         print(f"Board post failed: {e}")
         return False
 
-
-def add_item(content, item_type="note"):
-    """Non-blocking board post."""
-    thread = threading.Thread(
-        target=_post_item,
-        args=(content, item_type),
-        daemon=True
-    )
+def add_item(content):
+    thread = threading.Thread(target=_post_item, args=(content,), daemon=True)
     thread.start()
 
-
 def get_confirmation():
-    import random
     return random.choice(ROCKY_CONFIRMATIONS)
