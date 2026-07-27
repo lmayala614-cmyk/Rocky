@@ -11,6 +11,8 @@ import colorsys
 import visualizer_controller as viz_ctrl
 import audio_analyzer
 import vaporwave_viz
+import subprocess
+import board_controller
 
 pygame.init()
 pygame.mixer.init()
@@ -126,6 +128,9 @@ state = {
     "viz_scene": None,
     "viz_mode": 0,  # 0 = space, 1 = vaporwave
     "viz_scene_vaporwave": None,
+    "home_page": 0,           # 0 = main menu, 1 = smart home
+    "board_btn_rect": None,
+    "board_process": None
 }
 
 speakers = [
@@ -227,9 +232,11 @@ def draw_home():
         draw_home_page_main()
     elif state["home_page"] == 1:
         draw_home_page_smarthome()
+    elif state["home_page"] == 2:
+        draw_home_page_board()
 
     # Page dots at bottom center
-    total_pages = 2
+    total_pages = 3
     dot_y = 410
     dot_spacing = 20
     total_dot_width = (total_pages - 1) * dot_spacing
@@ -299,6 +306,49 @@ def draw_home_page_smarthome():
         circle_x = toggle_rect.right - 13 if device["on"] else toggle_rect.left + 13
         pygame.draw.circle(screen, BLACK, (circle_x, toggle_rect.centery), 10)
 
+def draw_home_page_board():
+    subtitle = font_small.render("MY BOARD", True, ACCENT)
+    screen.blit(subtitle, (20, 110))
+
+    # Open board button
+    board_btn = pygame.Rect(
+        (SCREEN_WIDTH - 500) // 2, 160, 500, 60)
+    pygame.draw.rect(screen, RAISED, board_btn, border_radius=12)
+    pygame.draw.rect(screen, ACCENT, board_btn, width=1, border_radius=12)
+    btn_label = font_medium.render("Open Full Board", True, TEXT_WHITE)
+    screen.blit(btn_label, (board_btn.centerx - btn_label.get_width() // 2,
+                             board_btn.centery - btn_label.get_height() // 2))
+
+    # Now playing strip
+    if spotify.current_track["title"] != "Nothing playing":
+        np_rect = pygame.Rect(20, 240, SCREEN_WIDTH - 40, 44)
+        pygame.draw.rect(screen, SURFACE, np_rect, border_radius=8)
+        pygame.draw.rect(screen, BORDER, np_rect, width=1, border_radius=8)
+        np_label = font_tiny.render("NOW PLAYING", True, MUTED)
+        screen.blit(np_label, (np_rect.x + 12, np_rect.y + 6))
+        song_label = font_small.render(
+            f"{spotify.current_track['title']} — {spotify.current_track['artist']}",
+            True, TEXT_WHITE)
+        # Truncate if too long
+        while song_label.get_width() > np_rect.width - 24:
+            t = spotify.current_track['title'][:18] + "..."
+            song_label = font_small.render(
+                f"{t} — {spotify.current_track['artist']}", True, TEXT_WHITE)
+            break
+        screen.blit(song_label, (np_rect.x + 12, np_rect.y + 22))
+
+    # Date and time
+    now = datetime.now()
+    date_str = now.strftime("%A, %B %d")
+    time_str = now.strftime("%I:%M %p").lstrip("0")
+    date_label = font_medium.render(date_str, True, TEXT_WHITE)
+    time_label = font_large.render(time_str, True, ACCENT)
+    screen.blit(time_label, (SCREEN_WIDTH // 2 - time_label.get_width() // 2, 300))
+    screen.blit(date_label, (SCREEN_WIDTH // 2 - date_label.get_width() // 2, 338))
+
+    # Store button rect for click detection
+    state["board_btn_rect"] = (board_btn.x, board_btn.y,
+                                board_btn.width, board_btn.height)
 
 def draw_music_screen():
     import time
@@ -860,6 +910,22 @@ while True:
                                 device["on"] = not device["on"]
                                 break
 
+                    elif state["home_page"] == 2:
+                        if state.get("board_btn_rect"):
+                            bx, by, bw, bh = state["board_btn_rect"]
+                            btn = pygame.Rect(bx, by, bw, bh)
+                            if btn.collidepoint(mouse_pos):
+                                try:
+                                    state["board_process"] = subprocess.Popen([
+                                        "chromium-browser",
+                                        "--kiosk",
+                                        "--noerrdialogs",
+                                        "--disable-infobars",
+                                        "https://pi-notes-board.lovable.app"
+                                    ])
+                                except Exception as e:
+                                    print(f"Chromium launch failed: {e}")        
+
             elif current_screen == "music":
                 # Any tap resets the bottom bar fade timer
                 state["bottom_bar_timer"] = 5.0
@@ -1011,7 +1077,7 @@ while True:
                 vertical = abs(event.pos[1] - state["swipe_start_y"])
                 if horizontal > 120 and horizontal > vertical * 2:
                     if event.pos[0] - state["swipe_start_x"] < -120:
-                        state["home_page"] = min(1, state["home_page"] + 1)
+                        state["home_page"] = min(2, state["home_page"] + 1)
                     elif event.pos[0] - state["swipe_start_x"] > 120:
                         state["home_page"] = max(0, state["home_page"] - 1)
 

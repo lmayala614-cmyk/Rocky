@@ -109,4 +109,14 @@ def react_to_song(title, artist):
         args=(prompt,),
         daemon=True
     )
-    thread.start()    
+    thread.start()
+
+BOARD_KEYWORDS = [
+    "add", "remind", "remember", "schedule", "meeting",
+    "appointment", "todo", "to do", "note", "don't forget",
+    "put on", "add to", "write down"
+]
+
+def is_board_command(text):
+    text_lower = text.lower()
+    return any(k in text_lower for k in BOARD_KEYWORDS)        
