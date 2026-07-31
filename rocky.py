@@ -916,15 +916,17 @@ while True:
                             btn = pygame.Rect(bx, by, bw, bh)
                             if btn.collidepoint(mouse_pos):
                                 try:
-                                    state["board_process"] = subprocess.Popen([
-                                        "chromium-browser",
-                                        "--kiosk",
-                                        "--noerrdialogs",
-                                        "--disable-infobars",
-                                        "https://pi-notes-board.lovable.app"
-                                    ])
+                                    import platform
+                                    if platform.system() == "Linux":
+                                        cmd = ["chromium-browser", "--kiosk",
+                                               "--noerrdialogs", "--disable-infobars",
+                                               "https://pi-notes-board.lovable.app"]
+                                    else:
+                                        # Mac — open in default browser
+                                        cmd = ["open", "https://pi-notes-board.lovable.app"]
+                                    state["board_process"] = subprocess.Popen(cmd)
                                 except Exception as e:
-                                    print(f"Chromium launch failed: {e}")        
+                                    print(f"Board launch failed: {e}")        
 
             elif current_screen == "music":
                 # Any tap resets the bottom bar fade timer
@@ -1035,7 +1037,13 @@ while True:
                         user_msg = state["chat_input"].strip()
                         state["chat_messages"].append({"role": "user", "text": user_msg})
                         state["chat_input"] = ""
-                        rocky_brain.ask_rocky(user_msg)
+                        if rocky_brain.is_board_command(user_msg):
+                            board_controller.add_item(user_msg)
+                            confirm = board_controller.get_confirmation()
+                            state["chat_messages"].append({"role": "rocky", "text": confirm})
+                            state["chat_scroll"] = max(0, len(state["chat_messages"]) * 34 - 300)
+                        else:
+                            rocky_brain.ask_rocky(user_msg)
                 elif back_button["rect"].collidepoint(mouse_pos):
                     handle_back_press()
                     current_screen = "home"
@@ -1119,7 +1127,13 @@ while True:
                     user_msg = state["chat_input"].strip()
                     state["chat_messages"].append({"role": "user", "text": user_msg})
                     state["chat_input"] = ""
-                    rocky_brain.ask_rocky(user_msg)
+                    if rocky_brain.is_board_command(user_msg):
+                        board_controller.add_item(user_msg)
+                        confirm = board_controller.get_confirmation()
+                        state["chat_messages"].append({"role": "rocky", "text": confirm})
+                        state["chat_scroll"] = max(0, len(state["chat_messages"]) * 34 - 300)
+                    else:
+                        rocky_brain.ask_rocky(user_msg)
             elif event.key == pygame.K_BACKSPACE:
                 state["chat_input"] = state["chat_input"][:-1]
             else:
