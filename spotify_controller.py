@@ -231,3 +231,45 @@ def get_interpolated_elapsed():
     # Cap at 2.5 seconds so we never drift too far from Spotify's truth
     seconds_since_refresh = min(seconds_since_refresh, 2.5)
     return _last_elapsed_at_refresh + seconds_since_refresh     
+
+def get_dominant_color():
+    """
+    Extract the dominant color from the current album art.
+    Returns an (r, g, b) tuple or None if no art available.
+    """
+    if _cached_art_surface is None:
+        return None
+
+    try:
+        # Sample a grid of pixels from the art surface
+        surf = _cached_art_surface
+        w, h = surf.get_size()
+        samples = []
+
+        for x in range(0, w, 8):
+            for y in range(0, h, 8):
+                color = surf.get_at((x, y))[:3]
+                # Skip very dark or very bright pixels
+                brightness = sum(color) / 3
+                if 30 < brightness < 220:
+                    samples.append(color)
+
+        if not samples:
+            return None
+
+        # Average the samples
+        r = int(sum(c[0] for c in samples) / len(samples))
+        g = int(sum(c[1] for c in samples) / len(samples))
+        b = int(sum(c[2] for c in samples) / len(samples))
+
+        # Boost saturation so it looks vivid not muddy
+        import colorsys
+        h_val, s_val, v_val = colorsys.rgb_to_hsv(r/255, g/255, b/255)
+        s_val = min(1.0, s_val * 1.8)
+        v_val = min(1.0, v_val * 1.3)
+        r, g, b = colorsys.hsv_to_rgb(h_val, s_val, v_val)
+        return (int(r*255), int(g*255), int(b*255))
+
+    except Exception as e:
+        print(f"Color extract failed: {e}")
+        return None

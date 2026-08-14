@@ -130,7 +130,15 @@ state = {
     "viz_scene_vaporwave": None,
     "home_page": 0,           # 0 = main menu, 1 = smart home
     "board_btn_rect": None,
-    "board_process": None
+    "board_process": None,
+    "accent_color": (180, 130, 255),    # starts as default purple
+    "accent_target": (180, 130, 255),   # color we're transitioning toward
+    "last_color_song": "",              # track which song we sampled
+    "screensaver_active": False,
+    "screensaver_timer": 5.0,    # 5 minutes = 300 seconds
+    "screensaver_particles": [],   # floating particles
+    "screensaver_hue": 0.0,        # slowly shifting color
+    "screensaver_face_pulse": 0.0, # Rocky's face breathing animation
 }
 
 speakers = [
@@ -208,6 +216,45 @@ def draw_bottom_bar(face, comment):
         if ticker_x < -comment_width:
             ticker_x = available_width
 
+def update_accent_color():
+    """Smoothly transition accent color toward the album art color."""
+    current_song = spotify.current_track["title"]
+
+    if current_song != state["last_color_song"] and current_song != "Nothing playing":
+        dominant = spotify.get_dominant_color()
+        if dominant:
+            state["accent_target"] = dominant
+            state["last_color_song"] = current_song
+
+    cr, cg, cb = state["accent_color"]
+    tr, tg, tb = state["accent_target"]
+    speed = 0.02
+    state["accent_color"] = (
+        int(cr + (tr - cr) * speed),
+        int(cg + (tg - cg) * speed),
+        int(cb + (tb - cb) * speed),
+    )            
+
+def update_accent_color():
+    """Smoothly transition accent color toward the album art color."""
+    current_song = spotify.current_track["title"]
+
+    # Only sample when song changes and art is loaded
+    if current_song != state["last_color_song"] and current_song != "Nothing playing":
+        dominant = spotify.get_dominant_color()
+        if dominant:
+            state["accent_target"] = dominant
+            state["last_color_song"] = current_song
+
+    # Smooth transition — lerp current toward target
+    cr, cg, cb = state["accent_color"]
+    tr, tg, tb = state["accent_target"]
+    speed = 0.02
+    state["accent_color"] = (
+        int(cr + (tr - cr) * speed),
+        int(cg + (tg - cg) * speed),
+        int(cb + (tb - cb) * speed),
+    )
 
 def draw_home():
     # Header - same on all pages
@@ -253,6 +300,43 @@ def draw_home():
         state.get("rocky_song_comment", "Hello! I am ready to help.")
     )
 
+def get_wifi_signal():
+    """Returns signal strength as 0-4 bars."""
+    import subprocess
+    import platform
+    try:
+        if platform.system() == "Linux":
+            # Pi — read from /proc/net/wireless
+            with open("/proc/net/wireless") as f:
+                lines = f.readlines()
+            for line in lines:
+                if "wlan" in line:
+                    parts = line.split()
+                    signal = float(parts[3].rstrip("."))
+                    # Convert to 0-4 bars
+                    if signal > -50: return 4
+                    elif signal > -60: return 3
+                    elif signal > -70: return 2
+                    elif signal > -80: return 1
+                    else: return 0
+        else:
+            # Mac — use airport command
+            result = subprocess.run(
+                ["/System/Library/PrivateFrameworks/Apple80211.framework/"
+                 "Versions/Current/Resources/airport", "-I"],
+                capture_output=True, text=True, timeout=2
+            )
+            for line in result.stdout.split("\n"):
+                if "agrCtlRSSI" in line:
+                    rssi = int(line.split(":")[1].strip())
+                    if rssi > -50: return 4
+                    elif rssi > -60: return 3
+                    elif rssi > -70: return 2
+                    elif rssi > -80: return 1
+                    else: return 0
+    except:
+        return -1  # unknown
+    return -1
 
 def draw_home_page_main():
     buttons_y = [130, 195, 260, 325]
@@ -351,6 +435,7 @@ def draw_home_page_board():
                                 board_btn.width, board_btn.height)
 
 def draw_music_screen():
+    dynamic_accent = tuple(state["accent_color"])
     import time
     screen.fill(BLACK)
 
@@ -373,7 +458,7 @@ def draw_music_screen():
         screen.blit(alpha_surf, (viz_start_x + i * bar_w, viz_top))
 
     # Top bar
-    title = font_large.render("NOW PLAYING", True, ACCENT)
+    title = font_large.render("NOW PLAYING", True, dynamic_accent)
     screen.blit(title, (20, 20))
     pygame.draw.line(screen, BORDER, (0, 60), (SCREEN_WIDTH, 60), 1)
 
@@ -516,7 +601,7 @@ def draw_music_screen():
     duration = max(spotify.current_track["duration_seconds"], 1)
     elapsed_interp = spotify.get_interpolated_elapsed()
     progress = min(elapsed_interp / duration, 1.0)
-    pygame.draw.rect(screen, ACCENT,
+    pygame.draw.rect(screen, dynamic_accent,
                      (bar_x, bar_y, int(bar_width_full * progress), 2), border_radius=2)
 
     elapsed_label = font_tiny.render(format_time(int(elapsed_interp)), True, TEXT_DIM)
@@ -532,7 +617,7 @@ def draw_music_screen():
     screen.blit(prev_label, (prev_button.centerx - prev_label.get_width() // 2,
                               prev_button.centery - prev_label.get_height() // 2))
 
-    pygame.draw.circle(screen, ACCENT, play_button.center, 28)
+    pygame.draw.circle(screen, dynamic_accent, play_button.center, 28)
     play_symbol = "||" if spotify.current_track["is_playing"] else ">"
     play_label = font_medium.render(play_symbol, True, BLACK)
     screen.blit(play_label, (play_button.centerx - play_label.get_width() // 2,
@@ -566,7 +651,7 @@ def draw_music_screen():
                          width=1, border_radius=8)
         screen.blit(rs_surf, (170, 425))
 
-        header = font_tiny.render("ROCKY SAYS", True, ACCENT)
+        header = font_tiny.render("ROCKY SAYS", True, dynamic_accent)
         header.set_alpha(bar_alpha)
         screen.blit(header, (180, 431))
 
@@ -773,6 +858,172 @@ def draw_visualizer_screen():
     hint.set_alpha(60)
     screen.blit(hint, (SCREEN_WIDTH - hint.get_width() - 16, SCREEN_HEIGHT - 16))
 
+def draw_screensaver():
+    import colorsys
+    import math
+
+    screen.fill((5, 3, 12))  # very dark background
+
+    sw, sh = SCREEN_WIDTH, SCREEN_HEIGHT
+    t = pygame.time.get_ticks() / 1000.0
+
+    # Slowly shifting hue
+    state["screensaver_hue"] = (t * 8) % 360
+
+    def hsv_col(h, s, v, a=255):
+        r, g, b = colorsys.hsv_to_rgb((h % 360) / 360, s, v)
+        return (int(r*255), int(g*255), int(b*255))
+
+    hue = state["screensaver_hue"]
+
+    # Initialize particles if needed
+    if not state["screensaver_particles"]:
+        for _ in range(80):
+            state["screensaver_particles"].append({
+                "x": random.uniform(0, sw),
+                "y": random.uniform(0, sh),
+                "size": random.uniform(0.5, 2.0),        # smaller
+                "speed": random.uniform(0.05, 0.25),     # slower drift
+                "angle": random.uniform(0, math.pi * 2),
+                "hue_off": random.uniform(-15, 15),
+                "jade": random.random() < 0.6,  # 60% of stars are jade tinted
+                "alpha": random.uniform(0.15, 0.55),     # dimmer
+                "twinkle": random.uniform(0, math.pi * 2),
+            })
+
+    # Draw particles
+    for p in state["screensaver_particles"]:
+        p["x"] += math.cos(p["angle"]) * p["speed"]
+        p["y"] += math.sin(p["angle"]) * p["speed"]
+        p["twinkle"] += 0.005  # much slower twinkle
+
+        # Wrap around edges
+        if p["x"] < 0: p["x"] = sw
+        if p["x"] > sw: p["x"] = 0
+        if p["y"] < 0: p["y"] = sh
+        if p["y"] > sh: p["y"] = 0
+
+        twinkle_alpha = p["alpha"] * (0.5 + 0.5 * math.sin(p["twinkle"]))
+        if p.get("jade"):
+            # Jade tinted star
+            col = (
+                int(60 + 40 * math.sin(p["twinkle"])),
+                int(180 + 40 * math.sin(p["twinkle"] + 1)),
+                int(150 + 30 * math.sin(p["twinkle"] + 2)),
+            )
+        else:
+            col = hsv_col(hue + p["hue_off"], 0.5, 0.8)
+        size = int(p["size"])
+
+        if size >= 1:
+            surf = pygame.Surface((size*4, size*4), pygame.SRCALPHA)
+            pygame.draw.circle(surf, (*col, int(twinkle_alpha * 255)),
+                             (size*2, size*2), size)
+            screen.blit(surf, (int(p["x"]) - size*2, int(p["y"]) - size*2))
+
+   # Rocky's bioluminescent jade glow — like his body in the book
+    jade_colors = [
+        (80, 200, 160),   # teal jade
+        (60, 180, 140),   # deeper jade
+        (100, 220, 170),  # bright jade highlight
+        (40, 140, 120),   # dark jade shadow
+    ]
+
+    for i, jade_col in enumerate(jade_colors):
+        # Slowly breathing glow movement
+        gx = sw // 2 + int(math.sin(t * 0.15 + i * 1.3) * 120)
+        gy = sh // 2 + int(math.cos(t * 0.1 + i * 0.9) * 70)
+        gr = int(150 + math.sin(t * 0.2 + i) * 40)
+
+        glow = pygame.Surface((gr*2, gr*2), pygame.SRCALPHA)
+        # Multiple layers for soft falloff
+        for layer in range(4):
+            layer_r = gr - layer * (gr // 5)
+            layer_a = max(0, 12 - layer * 2)
+            pygame.draw.circle(glow, (*jade_col, layer_a),
+                             (gr, gr), layer_r)
+        screen.blit(glow, (gx - gr, gy - gr))
+
+    # Extra bright jade pulse on the center — Rocky's core glow
+    core_brightness = 0.4 + 0.2 * math.sin(t * 0.6)
+    core_r = int(80 * core_brightness)
+    core_surf = pygame.Surface((core_r*2, core_r*2), pygame.SRCALPHA)
+    pygame.draw.circle(core_surf, (80, 210, 165, 15), (core_r, core_r), core_r)
+    screen.blit(core_surf, (sw//2 - core_r, sh//2 - core_r - 30))
+
+    # Big clock — centered, soft and beautiful
+    now = datetime.now()
+    time_str = now.strftime("%I:%M").lstrip("0")
+    ampm_str = now.strftime("%p")
+    date_str = now.strftime("%A, %B %d")
+
+    clock_col = hsv_col(hue, 0.5, 1.0)
+    dim_col = hsv_col(hue, 0.3, 0.6)
+
+    # Time — big and centered
+    clock_font = pygame.font.SysFont("monospace", 72, bold=True)
+    ampm_font = pygame.font.SysFont("monospace", 24)
+
+    time_surf = clock_font.render(time_str, True, clock_col)
+    ampm_surf = ampm_font.render(ampm_str, True, dim_col)
+    date_surf = font_small.render(date_str, True, dim_col)
+
+    pulse = 0.97 + 0.03 * math.sin(t * 1.5)
+    time_w = int(time_surf.get_width() * pulse)
+    time_h = int(time_surf.get_height() * pulse)
+    time_scaled = pygame.transform.scale(time_surf, (time_w, time_h))
+
+    clock_y = sh // 2 - 80
+
+    # Total width = time + gap + ampm stacked to the right
+    total_w = time_w + 8 + ampm_surf.get_width()
+    start_x = sw // 2 - total_w // 2
+
+    screen.blit(time_scaled, (start_x, clock_y))
+    # AM/PM sits top right of the time, not overlapping
+    screen.blit(ampm_surf, (start_x + time_w + 6, clock_y + 10))
+    screen.blit(date_surf, (sw//2 - date_surf.get_width()//2,
+                             clock_y + time_h + 10))
+
+    # Rocky's face — gently breathing below clock
+    face_pulse = 0.5 + 0.5 * math.sin(t * 0.8)
+    face_alpha = int(100 + 100 * face_pulse)
+    face_col = hsv_col((hue + 30) % 360, 0.4, 0.9)
+
+    face_str = "[ ^ w ^ ]"
+    face_surf = font_medium.render(face_str, True, face_col)
+    face_surf.set_alpha(face_alpha)
+    screen.blit(face_surf, (sw//2 - face_surf.get_width()//2, clock_y + time_h + 42))
+
+    # Now playing — very subtle at bottom
+    if spotify.current_track["title"] != "Nothing playing":
+        np_col = hsv_col(hue, 0.2, 0.5)
+        np_surf = font_tiny.render(
+            f"♪  {spotify.current_track['title']} — {spotify.current_track['artist']}",
+            True, np_col)
+        np_surf.set_alpha(120)
+        screen.blit(np_surf, (sw//2 - np_surf.get_width()//2, sh - 30))
+
+# WiFi signal bars — top right of screensaver
+    bars = get_wifi_signal()
+    bar_x = SCREEN_WIDTH - 50
+    bar_y = 18
+    if bars >= 0:
+        for i in range(4):
+            bar_h = 4 + i * 3
+            bar_rect = pygame.Rect(bar_x + i * 8, bar_y + (12 - bar_h), 5, bar_h)
+            jade = (80, 200, 160)
+            color = jade if i < bars else (30, 50, 45)
+            pygame.draw.rect(screen, color, bar_rect, border_radius=1)
+
+    # Tap to wake hint — very faint
+    hint_alpha = int(40 + 30 * math.sin(t * 0.5))
+    hint = font_tiny.render("tap to wake", True, (100, 80, 140))
+    hint_surf = pygame.Surface((hint.get_width(), hint.get_height()), pygame.SRCALPHA)
+    hint_surf.blit(hint, (0, 0))
+    hint_surf.set_alpha(hint_alpha)
+    screen.blit(hint_surf, (sw//2 - hint.get_width()//2, sh - 14))    
+
 def draw_playlists_screen():
     title = font_large.render("PLAYLISTS", True, ACCENT)
     screen.blit(title, (20, 20))
@@ -863,220 +1114,230 @@ while True:
         if event.type == pygame.MOUSEBUTTONDOWN:
             mouse_pos = event.pos
             state["screen_at_mousedown"] = current_screen
-            if current_screen == "home":
+
+            if state["screensaver_active"]:
+                state["screensaver_active"] = False
+                state["screensaver_timer"] = 300.0
+                state["screensaver_particles"] = []
                 state["swipe_start_x"] = event.pos[0]
                 state["swipe_start_y"] = event.pos[1]
+            else:
+                state["screen_at_mousedown"] = current_screen
+                if current_screen == "home":
+                    state["swipe_start_x"] = event.pos[0]
+                    state["swipe_start_y"] = event.pos[1]    
 
-            if current_screen == "speakers":
-                scroll_drag_start_y = event.pos[1]
-                scroll_drag_start_offset = state["speaker_scroll"]
 
-            if current_screen == "home":
-                swipe_distance = abs(mouse_pos[0] - state["swipe_start_x"])
+                if current_screen == "speakers":
+                    scroll_drag_start_y = event.pos[1]
+                    scroll_drag_start_offset = state["speaker_scroll"]
 
-                if swipe_distance < 10:  # it's a tap not a swipe
-                    if state["home_page"] == 0:
-                        for i, button in enumerate(home_buttons):
-                            if button["rect"].collidepoint(mouse_pos):
-                                button_pressed = i
-                                button_press_timer = 0.15
-                                current_screen = button["goto"]
-                                state["home_page"] = 0
-                                if button["goto"] == "playlists":
-                                    state["playlists"] = []
-                                    state["playlists_loaded"] = False
-                                    state["playlist_scroll"] = 0
-                                    state["playlist_screen"] = "playlists"
-                                    state["playlist_tracks"] = []
-                                    state["selected_playlist"] = None
-                                    state["track_scroll"] = 0
-                                if button["goto"] == "music":
-                                    if not spotify.current_track["is_playing"]:
-                                        spotify.play()
-                                    state["lyrics_mode"] = False
-                                    state["art_slide_progress"] = 0.0
-                                    state["bottom_bar_alpha"] = 255
-                                    state["bottom_bar_timer"] = 5.0
+                if current_screen == "home":
+                    swipe_distance = abs(mouse_pos[0] - state["swipe_start_x"])
 
-                    elif state["home_page"] == 1:
-                        card_height = 60
-                        gap = 10
-                        start_y = 135
-                        for index, device in enumerate(state["smarthome_devices"]):
-                            card_y = start_y + index * (card_height + gap)
-                            card_rect = pygame.Rect(40, card_y, 720, card_height)
-                            if card_rect.collidepoint(mouse_pos):
-                                home.toggle(device["device_key"])
-                                device["on"] = not device["on"]
-                                break
+                    if swipe_distance < 10:  # it's a tap not a swipe
+                        if state["home_page"] == 0:
+                            for i, button in enumerate(home_buttons):
+                                if button["rect"].collidepoint(mouse_pos):
+                                    button_pressed = i
+                                    button_press_timer = 0.15
+                                    current_screen = button["goto"]
+                                    state["home_page"] = 0
+                                    if button["goto"] == "playlists":
+                                        state["playlists"] = []
+                                        state["playlists_loaded"] = False
+                                        state["playlist_scroll"] = 0
+                                        state["playlist_screen"] = "playlists"
+                                        state["playlist_tracks"] = []
+                                        state["selected_playlist"] = None
+                                        state["track_scroll"] = 0
+                                    if button["goto"] == "music":
+                                        if not spotify.current_track["is_playing"]:
+                                            spotify.play()
+                                        state["lyrics_mode"] = False
+                                        state["art_slide_progress"] = 0.0
+                                        state["bottom_bar_alpha"] = 255
+                                        state["bottom_bar_timer"] = 5.0
 
-                    elif state["home_page"] == 2:
-                        if state.get("board_btn_rect"):
-                            bx, by, bw, bh = state["board_btn_rect"]
-                            btn = pygame.Rect(bx, by, bw, bh)
-                            if btn.collidepoint(mouse_pos):
-                                try:
-                                    import platform
-                                    if platform.system() == "Linux":
-                                        cmd = ["chromium-browser", "--kiosk",
-                                               "--noerrdialogs", "--disable-infobars",
-                                               "https://pi-notes-board.lovable.app"]
-                                    else:
-                                        # Mac — open in default browser
-                                        cmd = ["open", "https://pi-notes-board.lovable.app"]
-                                    state["board_process"] = subprocess.Popen(cmd)
-                                except Exception as e:
-                                    print(f"Board launch failed: {e}")        
+                        elif state["home_page"] == 1:
+                            card_height = 60
+                            gap = 10
+                            start_y = 135
+                            for index, device in enumerate(state["smarthome_devices"]):
+                                card_y = start_y + index * (card_height + gap)
+                                card_rect = pygame.Rect(40, card_y, 720, card_height)
+                                if card_rect.collidepoint(mouse_pos):
+                                    home.toggle(device["device_key"])
+                                    device["on"] = not device["on"]
+                                    break
 
-            elif current_screen == "music":
-                # Any tap resets the bottom bar fade timer
-                state["bottom_bar_timer"] = 5.0
+                        elif state["home_page"] == 2:
+                            if state.get("board_btn_rect"):
+                                bx, by, bw, bh = state["board_btn_rect"]
+                                btn = pygame.Rect(bx, by, bw, bh)
+                                if btn.collidepoint(mouse_pos):
+                                    try:
+                                        import platform
+                                        if platform.system() == "Linux":
+                                            cmd = ["chromium-browser", "--kiosk",
+                                                   "--noerrdialogs", "--disable-infobars",
+                                                   "https://pi-notes-board.lovable.app"]
+                                        else:
+                                            # Mac — open in default browser
+                                            cmd = ["open", "https://pi-notes-board.lovable.app"]
+                                        state["board_process"] = subprocess.Popen(cmd)
+                                    except Exception as e:
+                                        print(f"Board launch failed: {e}")        
 
-                if back_button["rect"].collidepoint(mouse_pos) and state["bottom_bar_alpha"] > 50:
-                    handle_back_press()
-                    current_screen = "home"
-                    state["home_page"] = 0
-                    pygame.mixer.music.stop()
-                    state["is_playing"] = False
-                    state["elapsed_seconds"] = 0
-                    state["lyrics_mode"] = False
-                    state["art_slide_progress"] = 0.0
-                    state["bottom_bar_alpha"] = 255
+                elif current_screen == "music":
+                    # Any tap resets the bottom bar fade timer
                     state["bottom_bar_timer"] = 5.0
 
-                elif art_click_rect.collidepoint(mouse_pos):
-                    state["lyrics_mode"] = not state["lyrics_mode"]
-                    if state["lyrics_mode"]:
-                        lyrics.current_song_key = None
-                        lyrics.fetch_lyrics(
-                            spotify.current_track["title"],
-                            spotify.current_track["artist"],
-                            spotify.current_track["duration_seconds"]
-                        )
-
-                elif viz_click_rect.collidepoint(mouse_pos):
-                    current_screen = "visualizer"
-                    state["viz_scene"] = viz_ctrl.init_scene(SCREEN_WIDTH, SCREEN_HEIGHT)      
-
-                elif play_button.collidepoint(mouse_pos):
-                    if spotify.current_track["is_playing"]:
-                        spotify.pause()
-                    else:
-                        spotify.play()
-
-                elif next_button.collidepoint(mouse_pos):
-                    spotify.next_track()
-                    state["lyrics_mode"] = False
-                    state["art_slide_progress"] = 0.0
-
-                elif prev_button.collidepoint(mouse_pos):
-                    spotify.prev_track()
-                    state["lyrics_mode"] = False
-                    state["art_slide_progress"] = 0.0
-
-            elif current_screen == "speakers":
-                if scroll_dragging:
-                    pass
-                elif back_button["rect"].collidepoint(mouse_pos):
-                    handle_back_press()
-                    current_screen = "home"
-                    state["home_page"] = 0
-                    state["speaker_scroll"] = 0
-                    scroll_dragging = False
-                elif broadcast_button.collidepoint(mouse_pos):
-                    any_on = any(s["on"] for s in speakers if s["connected"])
-                    for s in speakers:
-                        if s["connected"]:
-                            s["on"] = not any_on
-                else:
-                    for entry in speaker_card_rects:
-                        if entry["rect"].collidepoint(mouse_pos) and entry["speaker"]["connected"]:
-                            entry["speaker"]["on"] = not entry["speaker"]["on"]
-
-            elif current_screen == "playlists":
-                if back_button["rect"].collidepoint(mouse_pos):
-                    handle_back_press()
-                    if state["playlist_screen"] == "tracks":
-                        state["playlist_screen"] = "playlists"
-                        state["track_scroll"] = 0
-                    else:
+                    if back_button["rect"].collidepoint(mouse_pos) and state["bottom_bar_alpha"] > 50:
+                        handle_back_press()
                         current_screen = "home"
                         state["home_page"] = 0
-                else:
-                    if state["playlist_screen"] == "playlists":
-                        card_height = 56
-                        gap = 8
-                        start_y = 75
-                        for index, playlist in enumerate(state["playlists"]):
-                            card_y = start_y + index * (card_height + gap) - state["playlist_scroll"]
-                            card_rect = pygame.Rect(40, card_y, 720, card_height)
-                            if card_rect.collidepoint(mouse_pos):
-                                state["selected_playlist"] = playlist
-                                state["playlist_screen"] = "tracks"
-                                state["track_scroll"] = 0
-                                state["playlist_tracks"] = spotify.get_playlist_tracks(playlist["id"])
-                                break
-                    else:
-                        card_height = 52
-                        gap = 6
-                        start_y = 85
-                        for index, track in enumerate(state["playlist_tracks"]):
-                            card_y = start_y + index * (card_height + gap) - state["track_scroll"]
-                            card_rect = pygame.Rect(40, card_y, 720, card_height)
-                            if card_rect.collidepoint(mouse_pos):
-                                if track["uri"]:
-                                    spotify.play_track(track["uri"])
-                                    current_screen = "music"
-                                    state["show_lyrics"] = False
-                                break
+                        pygame.mixer.music.stop()
+                        state["is_playing"] = False
+                        state["elapsed_seconds"] = 0
+                        state["lyrics_mode"] = False
+                        state["art_slide_progress"] = 0.0
+                        state["bottom_bar_alpha"] = 255
+                        state["bottom_bar_timer"] = 5.0
 
-            elif current_screen == "chat":
-                send_rect = pygame.Rect(612, 378, 148, 36)
-                if send_rect.collidepoint(mouse_pos):
-                    if state["chat_input"].strip() and not rocky_brain.is_thinking():
-                        user_msg = state["chat_input"].strip()
-                        state["chat_messages"].append({"role": "user", "text": user_msg})
-                        state["chat_input"] = ""
-                        if rocky_brain.is_board_command(user_msg):
-                            board_controller.add_item(user_msg)
-                            confirm = board_controller.get_confirmation()
-                            state["chat_messages"].append({"role": "rocky", "text": confirm})
-                            state["chat_scroll"] = max(0, len(state["chat_messages"]) * 34 - 300)
+                    elif art_click_rect.collidepoint(mouse_pos):
+                        state["lyrics_mode"] = not state["lyrics_mode"]
+                        if state["lyrics_mode"]:
+                            lyrics.current_song_key = None
+                            lyrics.fetch_lyrics(
+                                spotify.current_track["title"],
+                                spotify.current_track["artist"],
+                                spotify.current_track["duration_seconds"]
+                            )
+
+                    elif viz_click_rect.collidepoint(mouse_pos):
+                        current_screen = "visualizer"
+                        state["viz_scene"] = viz_ctrl.init_scene(SCREEN_WIDTH, SCREEN_HEIGHT)      
+
+                    elif play_button.collidepoint(mouse_pos):
+                        if spotify.current_track["is_playing"]:
+                            spotify.pause()
                         else:
-                            rocky_brain.ask_rocky(user_msg)
-                elif back_button["rect"].collidepoint(mouse_pos):
-                    handle_back_press()
-                    current_screen = "home"
-                    state["home_page"] = 0
+                            spotify.play()
 
+                    elif next_button.collidepoint(mouse_pos):
+                        spotify.next_track()
+                        state["lyrics_mode"] = False
+                        state["art_slide_progress"] = 0.0
 
-            elif current_screen == "visualizer":
-                # Top area — mode dots — cycle between views
-                mode_rect = pygame.Rect(SCREEN_WIDTH//2 - 30, 0, 60, 40)
-                # Song title area — also cycle views
-                title_rect = pygame.Rect(20, SCREEN_HEIGHT - 65, 300, 35)
+                    elif prev_button.collidepoint(mouse_pos):
+                        spotify.prev_track()
+                        state["lyrics_mode"] = False
+                        state["art_slide_progress"] = 0.0
 
-                if mode_rect.collidepoint(mouse_pos) or title_rect.collidepoint(mouse_pos):
-                    state["viz_mode"] = (state["viz_mode"] + 1) % 2
-                    if state["viz_mode"] == 1:
-                        state["viz_scene_vaporwave"] = vaporwave_viz.init_vaporwave(
-                            SCREEN_WIDTH, SCREEN_HEIGHT)
+                elif current_screen == "speakers":
+                    if scroll_dragging:
+                        pass
+                    elif back_button["rect"].collidepoint(mouse_pos):
+                        handle_back_press()
+                        current_screen = "home"
+                        state["home_page"] = 0
+                        state["speaker_scroll"] = 0
+                        scroll_dragging = False
+                    elif broadcast_button.collidepoint(mouse_pos):
+                        any_on = any(s["on"] for s in speakers if s["connected"])
+                        for s in speakers:
+                            if s["connected"]:
+                                s["on"] = not any_on
                     else:
-                        state["viz_scene"] = viz_ctrl.init_scene(
-                            SCREEN_WIDTH, SCREEN_HEIGHT)
-                else:
-                    # Anywhere else — return to music
-                    current_screen = "music"
-                    state["viz_active"] = False
+                        for entry in speaker_card_rects:
+                            if entry["rect"].collidepoint(mouse_pos) and entry["speaker"]["connected"]:
+                                entry["speaker"]["on"] = not entry["speaker"]["on"]
 
-            else:
-                if back_button["rect"].collidepoint(mouse_pos):
-                    handle_back_press()
-                    pygame.mixer.music.stop()
-                    state["is_playing"] = False
-                    state["elapsed_seconds"] = 0
-                    current_screen = "home"
-                    state["home_page"] = 0
+                elif current_screen == "playlists":
+                    if back_button["rect"].collidepoint(mouse_pos):
+                        handle_back_press()
+                        if state["playlist_screen"] == "tracks":
+                            state["playlist_screen"] = "playlists"
+                            state["track_scroll"] = 0
+                        else:
+                            current_screen = "home"
+                            state["home_page"] = 0
+                    else:
+                        if state["playlist_screen"] == "playlists":
+                            card_height = 56
+                            gap = 8
+                            start_y = 75
+                            for index, playlist in enumerate(state["playlists"]):
+                                card_y = start_y + index * (card_height + gap) - state["playlist_scroll"]
+                                card_rect = pygame.Rect(40, card_y, 720, card_height)
+                                if card_rect.collidepoint(mouse_pos):
+                                    state["selected_playlist"] = playlist
+                                    state["playlist_screen"] = "tracks"
+                                    state["track_scroll"] = 0
+                                    state["playlist_tracks"] = spotify.get_playlist_tracks(playlist["id"])
+                                    break
+                        else:
+                            card_height = 52
+                            gap = 6
+                            start_y = 85
+                            for index, track in enumerate(state["playlist_tracks"]):
+                                card_y = start_y + index * (card_height + gap) - state["track_scroll"]
+                                card_rect = pygame.Rect(40, card_y, 720, card_height)
+                                if card_rect.collidepoint(mouse_pos):
+                                    if track["uri"]:
+                                        spotify.play_track(track["uri"])
+                                        current_screen = "music"
+                                        state["show_lyrics"] = False
+                                    break
+
+                elif current_screen == "chat":
+                    send_rect = pygame.Rect(612, 378, 148, 36)
+                    if send_rect.collidepoint(mouse_pos):
+                        if state["chat_input"].strip() and not rocky_brain.is_thinking():
+                            user_msg = state["chat_input"].strip()
+                            state["chat_messages"].append({"role": "user", "text": user_msg})
+                            state["chat_input"] = ""
+                            if rocky_brain.is_board_command(user_msg):
+                                board_controller.add_item(user_msg)
+                                confirm = board_controller.get_confirmation()
+                                state["chat_messages"].append({"role": "rocky", "text": confirm})
+                                state["chat_scroll"] = max(0, len(state["chat_messages"]) * 34 - 300)
+                            else:
+                                rocky_brain.ask_rocky(user_msg)
+                    elif back_button["rect"].collidepoint(mouse_pos):
+                        handle_back_press()
+                        current_screen = "home"
+                        state["home_page"] = 0
+
+
+                elif current_screen == "visualizer":
+                    # Top area — mode dots — cycle between views
+                    mode_rect = pygame.Rect(SCREEN_WIDTH//2 - 30, 0, 60, 40)
+                    # Song title area — also cycle views
+                    title_rect = pygame.Rect(20, SCREEN_HEIGHT - 65, 300, 35)
+
+                    if mode_rect.collidepoint(mouse_pos) or title_rect.collidepoint(mouse_pos):
+                        state["viz_mode"] = (state["viz_mode"] + 1) % 2
+                        if state["viz_mode"] == 1:
+                            state["viz_scene_vaporwave"] = vaporwave_viz.init_vaporwave(
+                                SCREEN_WIDTH, SCREEN_HEIGHT)
+                        else:
+                            state["viz_scene"] = viz_ctrl.init_scene(
+                                SCREEN_WIDTH, SCREEN_HEIGHT)
+                    else:
+                        # Anywhere else — return to music
+                        current_screen = "music"
+                        state["viz_active"] = False
+
+                else:
+                    if back_button["rect"].collidepoint(mouse_pos):
+                        handle_back_press()
+                        pygame.mixer.music.stop()
+                        state["is_playing"] = False
+                        state["elapsed_seconds"] = 0
+                        current_screen = "home"
+                        state["home_page"] = 0
 
         if event.type == pygame.MOUSEBUTTONUP:
             scroll_dragging = False
@@ -1200,9 +1461,22 @@ while True:
         else:
             state["title_scroll_x"] = state.get("title_scroll_x", 0) + 1.2
 
+    update_accent_color()
+
+    # Screensaver timer
+    if current_screen in ["music", "home"]:
+        state["screensaver_timer"] -= dt
+        if state["screensaver_timer"] <= 0:
+            state["screensaver_active"] = True
+            state["screensaver_particles"] = []
+    else:
+        state["screensaver_timer"] = 300.0
+
     screen.fill(BLACK)
 
-    if current_screen == "home":
+    if state["screensaver_active"]:
+        draw_screensaver()
+    elif current_screen == "home":
         draw_home()
     elif current_screen == "music":
         draw_music_screen()
@@ -1213,7 +1487,9 @@ while True:
     elif current_screen == "playlists":
         draw_playlists_screen()
     elif current_screen == "visualizer":
-        draw_visualizer_screen()    
+        draw_visualizer_screen()   
 
-    draw_clock()
+    if not state["screensaver_active"]:
+        draw_clock()    
+
     pygame.display.flip()
